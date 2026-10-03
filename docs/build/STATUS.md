@@ -2,7 +2,7 @@
 
 | Phase | Name | Status | Tag | Approved on | Open SPEC-GAPs |
 | --- | --- | --- | --- | --- | --- |
-| P00 | Architecture & scaffold | Not started | — | — | — |
+| P00 | Architecture & scaffold | Verifying | — | — | — |
 | P01 | Platform foundation | Not started | — | — | — |
 | P02 | Masters & imports | Not started | — | — | — |
 | P03 | Documents, certificates & AI extraction | Not started | — | — | — |

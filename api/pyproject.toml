@@ -1,0 +1,95 @@
+[project]
+name = "qualloop-api"
+version = "0.0.0"
+description = "QualLoop API, workers and migrations"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "gunicorn>=23",
+    "sqlalchemy>=2.0",
+    "psycopg[binary,pool]>=3.2",
+    "alembic>=1.14",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "structlog>=25",
+    "redis>=5",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "import-linter>=2.1",
+    "pytest>=8",
+    "pytest-cov>=6",
+    "hypothesis>=6.120",
+    "httpx>=0.28",
+    "time-machine>=2.16",
+    "pip-audit>=2.7",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM", "RUF"]
+ignore = ["S101", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S608"]
+"alembic/**" = ["S608"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app", "tests", "seeds", "alembic/helpers.py"]
+mypy_path = "alembic"
+explicit_package_bases = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "alembic"]
+addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
+markers = ["integration: needs real Postgres/Redis (compose or CI services)"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+# Overall gate (CLAUDE.md section 6: >= 75%). Per-module 90% gates are added in the phases that create those modules.
+fail_under = 75
+show_missing = true
+
+[tool.importlinter]
+root_package = "app"
+
+# ARCHITECTURE 3.1 module direction. Higher layers may import lower layers; `|` marks independent
+# siblings (no imports between them). Optional layers (in parentheses) are created in later phases.
+# Placement notes: scar owns /supplier/scar/* routes, documents owns /supplier/documents/*, reports owns the
+# case payload; supplier_access is a lower-level dependency that scar/documents may import, never the reverse.
+# app.core is the bottom layer, so it cannot import any other app.* module.
+[[tool.importlinter.contracts]]
+name = "module layering (ARCHITECTURE 3.1)"
+type = "layers"
+layers = [
+    "app.api",
+    "(app.reports)",
+    "(app.risk)",
+    "(app.scoring) | (app.imports)",
+    "(app.effectiveness) | (app.finance)",
+    "(app.documents) | (app.scar)",
+    "(app.ncr)",
+    "(app.receipts)",
+    "(app.supplier_access)",
+    "(app.notifications)",
+    "(app.masters) | (app.ai)",
+    "app.core",
+]

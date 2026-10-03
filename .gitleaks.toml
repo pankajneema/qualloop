@@ -1,0 +1,13 @@
+# Scan config for gitleaks (pre-commit, CI, `make secrets`). Only generated/ignored build output is allow-listed.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "generated build output (gitignored)"
+paths = [
+  '''(^|/)\.next/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)\.mypy_cache/''',
+  '''(^|/)\.ruff_cache/''',
+]

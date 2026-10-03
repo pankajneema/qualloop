@@ -4,3 +4,93 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 
 | ID | Phase | Spec § | Question | Conservative default chosen | Status (open / decided by human) |
 | --- | --- | --- | --- | --- | --- |
+| A-01 | P01 | §6.3 vs CLAUDE.md §6 | Money columns are named `amount_inr` in the spec but must be BIGINT paise. Keep the name or rename? | Rename to `amount_paise` (BIGINT); API field `amount_paise`; UI formats ₹ (ADR-005) | open |
+| A-02 | P01 | §6, §6.1 | Type/target of `created_by`/`updated_by` for supplier-session, system or AI actors | uuid, no FK; = users.id for internal users, NULL otherwise; `activity_log.actor_type/actor_id` is the actor of record | open |
+| A-03 | P01 | §6.1 | Is a user bound to one tenant; is email unique globally or per tenant? | One tenant per user; email globally unique (case-insensitive) | open |
+| A-04 | P01 | §6.1 | Does `users.plant_ids` restrict access or only filter? | Restricts plant-scoped objects for quality/viewer (out of scope → 404); admin sees all; supplier-level objects tenant-wide; app-enforced | open |
+| A-05 | P04 | §7.1, §7.5, §24.2 | Target state of NCR `reopen`; effect on defect events | CLOSED → CONTAINED (decision gate re-runs); requires reason + can_approve; defect events unchanged | open |
+| A-06 | P02 | §6.2, §15.6 | Supplier initial status on create/import | Manual create: status is a required field; import: `approved` with status_reason "initial import", logged | open |
+| A-07 | P01 | §6, §6.1 | Append-only tables vs universal `updated_at/updated_by` | Keep columns on all tables; on append-only tables they equal created_*; UPDATE/DELETE revoked + trigger | open |
+| A-08 | P03 | §7.3 | Which timezone decides "today" for supplier-level certificates/requirements in a multi-plant tenant? | Latest local date among the tenant's plants (expiry recognised as early as any plant would) | open |
+| A-09 | P07 | §6.6, §14.1 | Document score in a per-plant snapshot when compliance is supplier-level | Same supplier-level document score in every plant row | open |
+| A-10 | P05 | §6.3, §16, §17.2 | Who is "the SQE"/owner of an NCR/SCAR (no owner column)? | No owner column; owner shown = creating/issuing user; "SQE" notifications go to that user; My Work shows all items in the user's plants | open |
+| A-11 | P05 | §2.2, §17.2 | Who is "Head of Quality" for escalations? | All active users with `can_approve` who have access to the object's plant | open |
+| A-12 | P05 | §6.2, §17.2 | Contact language preference (no column) | Outbound templates in English; supplier page has EN/हिन्दी toggle; no new column until decided | open |
+| A-13 | P04 | §7.1, §11.1 | Are a cancelled NCR's defect events excluded from metrics? | Excluded by query when the NCR is cancelled before the as-of cutoff; events not mutated | open |
+| A-14 | P04 | §7.1 | Must every NCR pass CONTAINED; is contain with zero actions allowed? | Yes, every NCR passes CONTAINED; zero actions allowed only with a reason | open |
+| A-15 | P05 | §7.1, §7.2, §9 C8 | How linked NCRs follow SCAR states | Automatic (system actor): SCAR→EFFECTIVENESS ⇒ NCRs VERIFICATION; SCAR CLOSED ⇒ NCRs CLOSED; SCAR REOPENED ⇒ NCRs LINKED_TO_SCAR; SCAR CANCELLED ⇒ NCRs AWAITING_SCAR | open |
+| A-16 | P05 | §7.1, §9 C6 | "Add to existing SCAR" path | CONTAINED → AWAITING_SCAR → LINKED_TO_SCAR in one command, both transitions logged | open |
+| A-17 | P04 | §8 C5, §7.5 | When is `dispose` allowed; can disposition change? | Any open state; change via same command with reason (before/after logged); use-as-is needs can_approve | open |
+| A-18 | P04 | §6.3, §8 C5 | Which signature drives repeat/grouping/gate for a multi-defect NCR? | Every defect's signature; is_repeat true if any matches | open |
+| A-19 | P04 | §8 C5 | Repeat window scope | Across plants; 90 days inclusive on `detected_at`; cancelled NCRs excluded | open |
+| A-20 | P05 | §9 C6 | Minor "required on 2nd repeat in 90 days" — 2nd or 3rd occurrence? | Gate recommends "SCAR required" at the 2nd occurrence in 90 days (earlier, more conservative) | open |
+| A-21 | P04 | §8 C5, §11.2 | Attributed NCR events with category only (no code)? | Allowed: attributed event with `defect_code_id` NULL and category set | open |
+| A-22 | P04 | §8 C5 | Cost lines "expected before closure": block or warn? | Warning on close + reason recorded; no hard block | open |
+| A-23 | P05 | §6.3, §9 C6 | Who waives a Major SCAR and where is it recorded? | Decision monitor/local_close on a Major NCR requires can_approve + reason; stored in activity_log; `scars.waived_reason` unused in R1 | open |
+| A-24 | P04 | §11.4, §24.2 | Command to link receipt-less defect events | Derived `POST /defect-events/{id}/link-receipt` (quality role), suggestions by supplier+part+lot | open |
+| A-25 | P02/P04 | §6.3, §6.7 | Defect-event source for imported historical NCRs | source `manual`, `source_ref` = import_record_id, attributed, capture timestamps NULL | open |
+| A-26 | P05 | §6.3, §7.2 | What triggers RESPONSE_STARTED / `first_response_at`? | First supplier draft save or upload (content-bearing action); link open recorded only in `magic_links.opened_at` | open |
+| A-27 | P05 | §7.2, §24.2 | RESPONSE_SUBMITTED → UNDER_REVIEW trigger | Optional `start-review` command; accept/send-back from RESPONSE_SUBMITTED apply it implicitly (both logged) | open |
+| A-28 | P05 | §6.3, §9 C6 | SCAR severity and plant when NCRs differ | Severity = highest at issue; due dates not changed by later links; all NCRs same supplier and same plant (DB-enforced) | open |
+| A-29 | P05/P06 | §7.2, §12 | After REOPENED: revision, due dates, final_response_at, new effectiveness check? | revision + 1; due dates and `final_response_at`/`accepted_at` unchanged (write-once); new effectiveness check on re-acceptance | open |
+| A-30 | P06 | §6.3 | Debit note status transitions | raised on create; accept/dispute by commands; partly_recovered / recovered / written_off set by settlement commands from balances (recovered if outstanding 0 and any recovery; written_off if outstanding 0 and no recovery) | open |
+| A-31 | P05 | §9 C6 | Containment due from `issued_at` or NCR `detected_at`? | From `issued_at` | open |
+| A-32 | P05 | §6.3, §9 C7 | Internal vs supplier-visible review comments | `scar_reviews.comment` is supplier-visible (UI warns); no internal comment field in R1 | open |
+| A-33 | P05 | §6.5, §9 C7 | Supplier "message thread" model | Thread = outbound messages for this SCAR to the contact + send-back comments; no inbound chat in R1 | open |
+| A-34 | P05 | §6.3 | Exactly one primary link per SCAR? | Yes (partial unique index); first NCR at creation is primary | open |
+| A-35 | P05 | §7.5, §24.2 | Reopen command for a closed SCAR (corrections) | Derived `POST /scars/{id}/reopen`: CLOSED → REOPENED, can_approve + reason | open |
+| A-36 | P05 | §9 C7, §21.2 | What makes a link "used up"? | Revoked after 10 failed OTP verifications or when the object reaches a terminal state; otherwise reusable for 30 days | open |
+| A-37 | P05 | §6.5, §8 C10 | Document-upload link scope | One link per request message; object = supplier; session can only list requested/renewal requirements (doc type, due date) and upload | open |
+| A-38 | P05 | §9 C7, §8 C2 | OTP when contact has no verified channel | OTP to mobile on file (else email); success marks that channel verified | open |
+| A-39 | P06 | §6.3 | Recovery > outstanding; rounding tie-break | Reject recovery above total outstanding; tie → allocation with lowest id | open |
+| A-40 | P06 | §10, §7.5 | Allocation change command; debit note cancel | Derived `POST /debit-note-allocations/{id}/change` (can_approve + reason); no debit-note cancel in R1 (no status value) — corrections via write-off | open |
+| A-41 | P02 | §6.7, §8 C3 | Batch status values; re-import of same natural key with changed values | Statuses uploaded/mapped/validated/importing/completed/failed/cancelled; changed values → `review`, never auto-update | open |
+| A-42 | P02/P04 | §8 C3, §6.3 | Where is the "ERP rejection reference" stored? | `import_records.source_record_id`; dedupe on it, else row hash | open |
+| A-43 | P03 | §7.3, §8 C10 | Certificates without an expiry date | Approval requires `expiry_date` (DB CHECK); reviewer enters one | open |
+| A-44 | P03 | §8 C10 | Requirements no longer mandatory after category change | Rows kept; compliance counts only doc types mandatory for the current category; new mandatory types get rows | open |
+| A-45 | P03 | §7.4, §12, §15.2 | `renewal_due_at` value; pending_review past due_at | renewal_due_at = renewal_requested_at + grace_days; pending_review past due counts as due & non-compliant for compliance %, but CERT_MISSING fires only for `requested` | open |
+| A-46 | P01 | PHASES P01 vs §21.1 | Google login is not in the blueprint | Not built until the human confirms | open |
+| A-47 | P01 | §20.2, §21.1, CLAUDE.md §5 | ClamAV container needs its own process | Interface built; files stay `pending_scan` (fail closed) until the human approves ClamAV or GuardDuty, or accepts the risk | open |
+| A-48 | P09 | §26.4, PHASES P09 | Minimal billing not specified | Not built beyond `tenants.plan` text until specified | open |
+| A-49 | P07 | §15.2 | Is CERT_EXPIRING limited to mandatory requirements? | Yes, consistent with CERT_EXPIRED (current certificates of mandatory requirements) | open |
+| A-50 | P10 | §5.2, §13 | No way to create exceptions in R1 | Confirmed: no R1 path (no seed, no admin backdoor); endpoint and UI in P10 | open |
+| A-51 | P07 | §12, §14.5 | Which defect events count in a closed period's PPM? | Receipts by grn_date in period; events recorded (`created_at`) before cutoff with attribution state as of cutoff; later rejections on those receipts listed as "Corrections to earlier periods" | open |
+| A-52 | P07 | §14.5 | Period boundaries and snapshot time | Calendar month in plant timezone; snapshot job 1st 00:30 plant local; cutoff = next month 00:00 plant local | open |
+| A-53 | P07 | §12.1, §14.2 | Minimum sample for Repeat/Disruption and Document components | Repeat/Disruption N/A when Quality sample not met; Documents N/A when Due = 0 | open |
+| A-54 | P07 | §14.1, §14.3 | Target = 0; interpolation; grade rounding | Target must be > 0 (DB CHECK); quality = 100·(10t−ppm)/(9t) clamped 0–100; grade from total rounded half-up to integer | open |
+| A-55 | P07 | §6.6, §12.1 | Which coverage is `coverage_pct`? | Minimum of the three §12.1 coverage measures; all three stored in `inputs` | open |
+| A-56 | P07 | §15.2 | PPM_RISING 3-month average definition | 3 full calendar months before the month; each must meet min sample, else rule not evaluated | open |
+| A-57 | P07 | §15.2 | SUPPLIER_NO_RESPONSE "open request" | SCARs in ISSUED/SENT_BACK/REOPENED with no supplier action ≥ 7 days, and requirements REQUESTED (or renewal open) with no upload ≥ 7 days; one condition per object | open |
+| A-58 | P07 | §6.6 | Risk trend baseline | Compare with the system score at the previous month end (from activity_log) | open |
+| A-59 | P07 | §15.6, §6.6 | Monthly risk history for "two consecutive High months" | Month-end level derived from activity_log of `supplier_risk_current` changes | open |
+| A-60 | P07 | §6.6, §15.2 | Risk scope across plants | Per supplier; per-plant rules fire per plant (source = plant) and all count; rule caps apply across plants | open |
+| A-61 | P07 | §12 | Response-time medians: cohort by issue date or event date? | SCARs whose event (`first_response_at` / `accepted_at`) falls in the period | open |
+| A-62 | P08 | §16 | "Turned High risk" window on My Work | Current calendar month | open |
+| A-63 | P05 | §20.3, §20.4, §6 | No table for 8D review assist / NCR category suggestions | Proposed technical table `ai_suggestions`; not created and feature waits until approved | open |
+| A-64 | P04 | §20.4, §24.1.3 | Interactive voice-to-text vs "AI only from background jobs" | Browser/OS speech API on the device; no server AI call; hidden if unsupported | open |
+| A-65 | P05 | §17.1 | SMS in R1? Which provider? | Not built in R1; fallback is email | open |
+| A-66 | P05 | §22.3 | Daily-scan "last sent message" granularity | Any channel, same recipient contact, same object and template_code, status sent/delivered/read | open |
+| A-67 | P05 | §17.3 | WhatsApp STOP from a mobile that is a contact in several tenants (shared sender number) | Opt out WhatsApp for every contact with that mobile across all tenants (via definer lookup) | open |
+| A-68 | P04 | §6.3, §11.3 | "Same rejection, different quantity": which event survives; meaning of `difference_qty` | Event whose qty equals accepted_qty survives; if neither, a new attributed event supersedes both (quantities never updated); `difference_qty = erp_qty − ncr_qty` | open |
+| A-69 | P06 | §10 | Must allocated cost lines belong to the debit note's supplier? | Yes, enforced in command and DB trigger | open |
+| A-70 | P01 | §2.2, §21.2 | Role matrix details | Admin ⊇ Quality; Viewer read-only, no Excel export, no original document/evidence download (photos inline allowed) | open |
+| A-71 | P04 | §6 Numbering | `{seq}` width/reset, YYMM timezone, scope | Min 3 digits (per `SCAR-2611-014`), resets monthly; NCR per plant, SCAR/DN per tenant; YYMM in plant tz (DN: `dn_date`) | open |
+| A-72 | P04 | §6.3 | Quantity type and unit of measure | Integer units (BIGINT); non-integer import rows rejected with reason | open |
+| A-73 | P01 | §22.2 | Durable Idempotency-Key storage needs a table not in §6 | Technical table `idempotency_keys` (needs approval) | open |
+| A-74 | P01 | §6, §7.5, §21.1 | Technical columns not listed in §6 | `users.password_hash` (§21.1), `archived_at` on suppliers/customers/parts/customer_parts/supplier_parts (§7.5), `supplier_scores_monthly.inputs` (§14.5) — approve | open |
+| A-75 | P02 | §6.2 | `supplier_parts.status` values | `active` / `inactive` | open |
+| A-76 | P03 | §6.4 | `documents.status` values | `pending_scan` / `available` / `quarantined` | open |
+| A-77 | P03 | §6.4 | Unit of `ai_extractions.cost` | `cost_usd_micros` bigint (provider cost, not business money) | open |
+| A-78 | P05 | §9 C7, §21.1 | OTP parameters | 6 digits, 10-min TTL, 5 attempts/OTP, 3 sends/hour/link, 10 failures → link revoked | open |
+| A-79 | P06 | §10 | Write-off approver; corrections to recoveries/write-offs | Approver must have can_approve; recoveries/allocations/write-offs append-only (no correction path in R1) | open |
+| A-80 | P06 | §6.3, §9 C8 | Effectiveness for a SCAR whose NCRs cover several parts (`part_id` is single) | One check per (SCAR, part); SCAR passes only when all pass; any failure reopens | open |
+| A-81 | P05 | §6.5 | `tasks.type/status/priority` values | types cert_expiring_review, cert_expiry_escalation, requirement_not_requested, effectiveness_decision, scar_escalation; status open/done/cancelled; priority normal/high | open |
+| A-82 | P05 | §9 C7 | Fields not in the supplier "sees" list (severity, plant, NCR numbers) | Excluded (allow-list only) | open |
+| A-83 | P09 | §21.5 | Retention of activity_log, messages, outbox_events, sessions; anonymisation vs append-only audit | Retain everything; no deletion until legal review; audit stores contact mobile/email masked | open |
+| A-84 | P00 | DESIGN_SPEC Colour | DESIGN_SPEC names "blue", "amber", "grey" for certificate-valid / expiring and risk-low / medium without hex values; no value for the single dialog shadow | Reuse spec pairs: blue #D1E9FF/#194185, amber #FEF0C7/#93370D, grey #F2F4F7/#344054; shadow omitted until specified (marked SPEC-GAP in web/src/design/tokens.ts) | open |
+| A-85 | P05 | §24.2, §9 C7, §21.1 | §24.2 puts the token in `POST /supplier-access/{token}/verify-otp`, but the security review (D-4) requires the token never to stay in a URL | Path kept verbatim; browser calls it with `{token}` = `current`, authenticated by the HttpOnly `ql_pre` cookie set at `/s/{token}` exchange; raw tokens in the path rejected | open |
+| A-86 | P05 | §6.5, §21.1 | OTP failure count needs durable storage (security review D-6); `magic_links` has no such column | Technical column `magic_links.otp_failed_count` (int, default 0); 10 failures → link revoked | open |
+| A-87 | P05 | §6.5, §22.2 | Linking a message to the magic link it carried (link created in the send job, review M3) | Technical column `messages.magic_link_id` (FK, nullable); plaintext token never stored; lost send re-issues the link | open |
+| A-88 | P06 | §6.3 | Effectiveness `signature` key is singular `defect_category`; a multi-NCR SCAR can span several categories | Store `defect_categories` as an array in the signature json | open |
+| A-89 | P01 | §22.2 | Durable record of dead-lettered jobs needs a table not in §6 | Technical table `job_dead_letters` (needs approval); outbox dead letters stay in `outbox_events` | open |
+| A-90 | P01 | §6 | Format/positivity CHECKs not stated in the spec (plant code regex, E.164 mobile, GSTIN regex, consent source list, qty > 0, amount > 0, containment qty ≥ 0, non-blank text) | Keep them, labelled (A-90) in DATA_MODEL.md §0.8; human may drop any | open |

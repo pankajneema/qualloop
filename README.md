@@ -70,3 +70,39 @@ Tips:
 No prompt makes software bug-free. This kit makes errors unlikely to survive: tests are written from the spec
 by an agent that never saw the code, every phase is verified by a fresh agent that must show command output,
 money and tenant rules are enforced in the database, and you approve every phase before the next starts.
+
+## Local development
+
+Prerequisites: Docker (with Compose v2), `make`, [uv](https://docs.astral.sh/uv/) (Python 3.12 is installed by uv),
+Node.js 24 (`web/.nvmrc`). pnpm is pinned in `web/package.json` (`packageManager`). pnpm is not required globally:
+the Makefile runs it through `npx pnpm@10.34.6` (override with `make PNPM=pnpm ...`; with corepack available,
+`corepack enable pnpm` works too).
+
+```
+make up        # postgres, redis, minio (+ buckets), mailpit, migrate, api, web; waits until healthy
+make down      # stop (V=1 also drops volumes)
+make test      # api: pytest + coverage gate against compose Postgres/Redis; web: vitest
+make lint      # ruff, ruff format --check, mypy --strict, lint-imports, eslint, prettier --check, tsc
+make fmt       # auto-format
+make migrate   # alembic upgrade head
+make seed      # demo data (no-op until P01)
+make e2e       # Playwright smoke against the running stack (first: cd web && npx pnpm@10.34.6 exec playwright install chromium)
+make ci        # the same steps as .github/workflows/ci.yml, locally
+```
+
+| URL | Service |
+| --- | --- |
+| http://localhost:3000 | web (Next.js) |
+| http://localhost:8000/healthz, /readyz | api liveness / readiness |
+| http://localhost:8025 | Mailpit (local email) |
+| http://localhost:9001 | MinIO console (dev credentials in `infra/compose.yaml`) |
+
+If 5432 or 6379 is already used on your machine, publish on other host ports: `QL_PG_HOST_PORT=55432 make up`
+(and use the same value for `make test`). Dev passwords in `infra/` are placeholders for local use only; real
+secrets come from a secrets manager or CI secrets and never from the repo. Copy `.env.example` to `.env` for
+host-side tooling; `.env` is gitignored.
+
+Note: the MinIO image is `bitnamilegacy/minio` (pinned by digest) because official MinIO images are no longer
+published on Docker Hub. It is unmaintained and used for local development and CI only; staging/prod use the
+cloud provider's object storage. Container base images are pinned by digest; `make ci` also runs `pip-audit`,
+`pnpm audit --prod` and a Trivy image scan (these need network access).

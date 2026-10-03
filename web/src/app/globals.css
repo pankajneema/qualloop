@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+@config '../../tailwind.config.ts';
+
+/* Token values live in src/design/tokens.ts and arrive as --ql-* variables on <html>. */
+html {
+  background: var(--ql-color-ground);
+  color: var(--ql-color-ink-2);
+  font-family: var(--font-plex-sans), var(--font-plex-devanagari), sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* Devanagari text: +2 px line-height (DESIGN_SPEC). */
+:lang(hi) body {
+  line-height: calc(20px + var(--ql-devanagari-extra-line));
+}
+
+a {
+  color: var(--ql-color-action);
+}
+a:hover {
+  color: var(--ql-color-action-hover);
+}

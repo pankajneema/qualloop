@@ -1,0 +1,145 @@
+# Local development stack. Dev-only placeholder credentials; never reuse outside local/CI.
+# Start with `make up` (docker compose -f infra/compose.yaml up -d --build --wait).
+# Host ports are overridable: QL_PG_HOST_PORT, QL_REDIS_HOST_PORT (if 5432/6379 are already taken).
+name: qualloop
+
+x-api-env: &api-env
+  QL_ENV: local
+  QL_LOG_LEVEL: ${QL_LOG_LEVEL:-INFO}
+  QL_DATABASE_URL: postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop
+  QL_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop
+  QL_REDIS_URL: redis://redis:6379/0
+  QL_PUBLIC_BASE_URL: http://localhost:3000
+
+services:
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres-dev-only}
+    ports:
+      - "127.0.0.1:${QL_PG_HOST_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d qualloop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    ports:
+      - "127.0.0.1:${QL_REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    # Official minio/minio images are no longer published on Docker Hub; pinned Bitnami legacy build (local dev only).
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
+    command: ["minio", "server", "/bitnami/minio/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${QL_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${QL_S3_SECRET_KEY:-change-me-local-only}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20  # ships mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${QL_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${QL_S3_SECRET_KEY:-change-me-local-only}
+    volumes:
+      - ./minio/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: qualloop-api:dev
+    build:
+      context: ../api
+      target: dev
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: qualloop-api:dev
+    build:
+      context: ../api
+      target: dev
+    environment: *api-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ../api/app:/app/app
+      - ../api/alembic:/app/alembic
+      - ../api/seeds:/app/seeds
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: ../web
+      target: dev
+    environment:
+      NEXT_PUBLIC_DEFAULT_LOCALE: en
+      QL_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ../web/src:/app/src
+      - ../web/messages:/app/messages
+      - ../web/public:/app/public
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+volumes:
+  pgdata:
+  miniodata:

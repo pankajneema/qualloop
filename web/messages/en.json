@@ -1,0 +1,10 @@
+{
+  "shell": {
+    "navLabel": "Main navigation",
+    "mainLabel": "Main content"
+  },
+  "home": {
+    "title": "QualLoop",
+    "subtitle": "App shell is ready. Screens arrive in later phases."
+  }
+}
