@@ -2,6 +2,41 @@
 
 One section per verified phase: what users can now do, notable decisions, known limitations.
 
+## P01 — Platform foundation (2026-10-03, tag `p01-verified`)
+
+**Now possible:**
+- **Tenants and users:**
+  - Seed a demo tenant with plants and users (`make seed`).
+  - Sign in with email and password; reset a password by email code (Mailpit locally).
+  - Admins manage users, plants and tenant settings through command endpoints. `GET /me` returns the signed-in user, role and plants.
+- **Isolation and audit:**
+  - Every change is authorised, audited (before/after, reason, actor, session, IP) and emits an outbox event in the same transaction.
+  - Tenants are isolated by forced Postgres RLS, in requests and in background jobs.
+- **Background work:** an outbox dispatcher, Dramatiq workers and a scheduler run in compose. Failed work dead-letters after 5 attempts with an alert.
+- **Files:** signed upload and download URLs (at most 15 min), with ClamAV scanning and content-type checks.
+
+**Decisions:**
+- Roles are admin, quality and viewer, plus `can_approve`. Viewers cannot run commands.
+- Idempotency-Key is a UUID, kept 24 h.
+- Redis requires a password and limits the app to its own key patterns.
+- The owner DB credential is given to the migration job only.
+- `QL_ENV` is required.
+- `QL_TRUSTED_PROXIES` sets which proxies' forwarded client IPs are trusted.
+- Accepted as built at the gate:
+  - A-99: a UUIDv7 generator replaces the `uuid6` library.
+  - A-100: dead-letter after 5 executions in total.
+
+**Reviews:** the code review (3 High) and the security review (1 High, then 1 Medium in the re-review) were all fixed, each with a regression test. Records are in `docs/build/phases/P01-code-review.md` and `P01-security-review.md`.
+
+**Verification:** 879 tests passed and 19 were expected failures (events built in later phases). Coverage is 90.95% overall and 93% for `app/core`. Full report in `docs/build/phases/P01-verification.md`.
+
+**Known limitations / open:**
+- No screens yet; login and reset screens come in P02 (A-93).
+- No generic file-download endpoint (A-92).
+- Production proxy CIDRs and stricter production settings checks are set in P09 (A-106, A-107).
+- The cookie `__Host-` prefix is undecided (A-101).
+- The ADR-005 and ADR-006 text still needs amending for A-99 and A-100.
+
 ## P00 — Architecture & scaffold (2026-10-03, tag `p00-verified`)
 
 **Now possible:** `make up` starts Postgres 16, Redis, MinIO, Mailpit, the API (`/healthz`, `/readyz`) and the
