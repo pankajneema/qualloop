@@ -143,8 +143,8 @@ Added after review. Tests: `P01-tests.md` section "Review regressions". **assume
     nothing written. Authorisation is still checked first (a viewer gets 403).
 14. **Password reset.** (a) a job for an older request never replaces a code stored for a newer request; (b) `otp.consume` on an
     expired code creates no key and never leaves an `otp:pwreset:*` key without a TTL, even if the key expires mid-call;
-    (c) 10 failed confirms in 24 h per account (counter not reset by a new request) make every later confirm fail, valid code or
-    not; (d) **SPEC-GAP-pending**: 20 requests per hour per IP on `/auth/password-reset/request` and 20 per hour per IP on
+    (c) 10 failed guesses against an issued, live code in 24 h per account (counter not reset by a new request) make every later
+    confirm fail, valid code or not; confirms when no live code exists do not count and answer the same generic 422 (A-105); (d) **SPEC-GAP-pending**: 20 requests per hour per IP on `/auth/password-reset/request` and 20 per hour per IP on
     `/confirm`, each its own counter, 429 `rate_limited` with `Retry-After` <= 3600; (e) if enqueueing fails (broker error) the request
     still answers 202 with the same body as for an unknown email.
 15. **Chunked bodies.** A request body over 1 MB without a `Content-Length` header gets 413 `payload_too_large`, like a sized one.

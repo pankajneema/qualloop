@@ -109,6 +109,86 @@ def test_updating_the_allowed_user_columns_still_works(
     assert row["name"] == "Renamed User" and row["can_approve"] is True
 
 
+# --- security review L-3: plants and idempotency_keys column grants ----------------------------------
+UPDATABLE_COLUMNS = {
+    "plants": {"name", "address", "timezone", "updated_at", "updated_by"},
+    "idempotency_keys": {"response_status", "response_body", "updated_at", "updated_by"},
+}
+
+
+@pytest.mark.parametrize("table", sorted(UPDATABLE_COLUMNS))
+def test_qualloop_app_may_update_only_the_documented_columns(
+    app_engine: Engine, table: str
+) -> None:
+    with app_engine.connect() as conn:
+        granted = {
+            r[0]
+            for r in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.column_privileges "
+                    "WHERE table_schema = 'public' AND table_name = :t "
+                    "AND grantee = 'qualloop_app' AND privilege_type = 'UPDATE'"
+                ),
+                {"t": table},
+            )
+        }
+    expected = UPDATABLE_COLUMNS[table]
+    assert granted == expected, (
+        f"{table}: unexpected UPDATE on {sorted(granted - expected)}; "
+        f"missing {sorted(expected - granted)}"
+    )
+
+
+@pytest.mark.parametrize("table", sorted(UPDATABLE_COLUMNS))
+def test_no_table_wide_update_privilege_for_the_app_role(app_engine: Engine, table: str) -> None:
+    with app_engine.connect() as conn:
+        table_wide = conn.execute(
+            text("SELECT has_table_privilege('qualloop_app', :t, 'UPDATE')"),
+            {"t": f"public.{table}"},
+        ).scalar_one()
+    assert table_wide is False
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "sql_type"),
+    [
+        ("plants", "code", "text"),
+        ("plants", "id", "uuid"),
+        ("plants", "tenant_id", "uuid"),
+        ("idempotency_keys", "request_hash", "text"),
+        ("idempotency_keys", "actor_id", "uuid"),
+        ("idempotency_keys", "key", "text"),
+    ],
+)
+def test_updating_an_immutable_column_is_denied(
+    app_engine: Engine, seeded: SeededTenant, table: str, column: str, sql_type: str
+) -> None:
+    value = "ZZ9" if sql_type == "text" else str(uuid4())
+    with (
+        expect_db_error(psycopg.errors.InsufficientPrivilege, "permission denied"),
+        tenant_conn(app_engine, seeded.id) as conn,
+    ):
+        conn.execute(
+            text(f'UPDATE {table} SET "{column}" = CAST(:v AS {sql_type})'),
+            {"v": value},
+        )
+
+
+def test_updating_the_allowed_plant_columns_still_works(
+    app_engine: Engine, seeded: SeededTenant
+) -> None:
+    plant = seeded.plants[0]
+    with tenant_conn(app_engine, seeded.id) as conn:
+        conn.execute(
+            text(
+                "UPDATE plants SET name = 'Renamed Plant', timezone = 'Asia/Kolkata' WHERE id = :i"
+            ),
+            {"i": plant},
+        )
+    row = fetch_all(app_engine, seeded.id, "SELECT name FROM plants WHERE id = :i", {"i": plant})
+    assert row[0]["name"] == "Renamed Plant"
+
+
 # --- item 9 ----------------------------------------------------------------------------------------
 def failing_insert_with_email(tenant: SeededTenant, email: str) -> DBAPIError:
     tenant_tx = load("app.core.db", "tenant_tx")

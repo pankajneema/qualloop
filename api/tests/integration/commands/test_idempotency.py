@@ -7,10 +7,11 @@ from uuid import UUID
 
 import httpx
 import pytest
+import time_machine
 from sqlalchemy import Engine, text
 
 from tests.factories.api import ApiFactory, new_key, problem
-from tests.factories.db import SeededTenant, create_user, fetch_all, tenant_conn
+from tests.factories.db import SeededTenant, create_user, fetch_all
 from tests.integration.commands.test_command_audit_and_outbox import log_rows, outbox_rows
 from tests.integration.commands.test_platform_commands_api import admin_client, new_plant_body
 
@@ -119,15 +120,13 @@ def test_expired_idempotency_key_is_forgotten(
     admin = admin_client(api, seeded)
     key = new_key()
     assert admin.post("/plants", new_plant_body(), key=key).status_code in (200, 201)
-    with tenant_conn(app_engine, seeded.id) as conn:
-        conn.execute(
-            text("UPDATE idempotency_keys SET expires_at = :x WHERE key = :k"),
-            {"x": datetime.now(UTC) - timedelta(minutes=1), "k": key},
-        )
     fresh = new_plant_body()
-    resp = admin.post(
-        "/plants", fresh, key=key
-    )  # different body: would be 422 if the key were remembered
+    # the app role may not UPDATE expires_at (column grants), so move the clock past the 24 h retention instead
+    with time_machine.travel(datetime.now(UTC) + timedelta(hours=25), tick=True):
+        late_admin = admin_client(api, seeded)  # the old session is past its own lifetime by then
+        resp = late_admin.post(
+            "/plants", fresh, key=key
+        )  # different body: would be 422 if the key were remembered
     assert resp.status_code in (200, 201), resp.text
     assert "idempotency-replayed" not in resp.headers
     assert plants_with_code(app_engine, seeded.id, fresh["code"]) == 1

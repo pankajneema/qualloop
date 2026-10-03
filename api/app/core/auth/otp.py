@@ -67,26 +67,36 @@ def store(user_id: UUID, code: str, nonce: str | None = None) -> bool:
     raise RuntimeError("could not store the reset code: the key kept changing")
 
 
-def consume(user_id: UUID, code: str) -> bool:
-    """True once for the right code; False for wrong, expired, burnt or already used codes (all look the same).
+def has_live_code(user_id: UUID) -> bool:
+    """True while a code is stored for the user (it may still turn out to be burnt or expired)."""
+    return bool(get_redis().exists(_key(user_id)))
+
+
+def attempt(user_id: UUID, code: str) -> str:
+    """One guess: "none" (no live code, nothing was counted), "ok" (right, now used up) or "wrong".
 
     The attempt counter, the code and the TTL are handled in ONE MULTI/EXEC: `EXPIRE ... NX` gives any key that
     `HINCRBY` had to re-create (the code expired between the check and the increment) a TTL, so no `otp:` key can ever
-    exist without one. Such a stray key has no `mac`, so it never verifies."""
+    exist without one. Such a stray key has no `mac`, so it never verifies and reports "none"."""
     redis = get_redis()
     key = _key(user_id)
     if not redis.exists(key):
-        return False
+        return "none"
     pipe = redis.pipeline()
     pipe.hincrby(key, "attempts", 1)
     pipe.hget(key, "mac")
     pipe.expire(key, TTL_SECONDS, nx=True)
     attempts, stored, _ = pipe.execute()
+    if stored is None:
+        return "none"
     if int(attempts) > MAX_ATTEMPTS:
         redis.delete(key)
-        return False
-    if stored is None or not hmac.compare_digest(
-        str(stored), _mac("pwreset-verify", str(user_id), code)
-    ):
-        return False
-    return bool(redis.delete(key))  # atomic single use: only one caller sees 1
+        return "wrong"
+    if not hmac.compare_digest(str(stored), _mac("pwreset-verify", str(user_id), code)):
+        return "wrong"
+    return "ok" if redis.delete(key) else "none"  # atomic single use: only one caller sees 1
+
+
+def consume(user_id: UUID, code: str) -> bool:
+    """True once for the right code; False for wrong, expired, burnt or already used codes (all look the same)."""
+    return attempt(user_id, code) == "ok"

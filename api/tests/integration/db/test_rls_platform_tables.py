@@ -55,16 +55,18 @@ def test_tenant_a_cannot_insert_row_for_tenant_b(app_engine: Engine, table: str)
 @pytest.mark.parametrize("table", ["plants", "users", "idempotency_keys", "tenants"])
 def test_tenant_a_cannot_update_tenant_b_rows(app_engine: Engine, table: str) -> None:
     a, b = _two_tenants_with_rows(app_engine, table)
-    column = "name" if table in {"plants", "tenants", "users"} else "endpoint"
+    column, value = (
+        ("response_status", "418") if table == "idempotency_keys" else ("name", "'hijacked'")
+    )
     with tenant_conn(app_engine, a) as conn:
         count = conn.execute(
-            text(f"UPDATE {table} SET {column} = 'hijacked' WHERE tenant_id = :b"), {"b": b}
+            text(f"UPDATE {table} SET {column} = {value} WHERE tenant_id = :b"), {"b": b}
         ).rowcount
     assert count == 0
     with tenant_conn(app_engine, b) as conn:
         assert (
             conn.execute(
-                text(f"SELECT count(*) FROM {table} WHERE {column} = 'hijacked'")
+                text(f"SELECT count(*) FROM {table} WHERE {column} = {value}")
             ).scalar_one()
             == 0
         )
@@ -73,11 +75,14 @@ def test_tenant_a_cannot_update_tenant_b_rows(app_engine: Engine, table: str) ->
 def test_tenant_a_cannot_move_a_row_to_tenant_b_by_updating_tenant_id(app_engine: Engine) -> None:
     a, b = create_tenant(app_engine), create_tenant(app_engine)
     create_plant(app_engine, a)
+    # tenant_id is not an updatable column: "permission denied" is a stronger refusal than the RLS check
     with (
-        expect_db_error(psycopg.errors.InsufficientPrivilege, RLS),
+        expect_db_error(psycopg.errors.InsufficientPrivilege, f"({RLS})|permission denied"),
         tenant_conn(app_engine, a) as conn,
     ):
         conn.execute(text("UPDATE plants SET tenant_id = :b"), {"b": b})
+    with tenant_conn(app_engine, b) as conn:
+        assert conn.execute(text("SELECT count(*) FROM plants")).scalar_one() == 0
 
 
 @pytest.mark.parametrize("table", TABLES)

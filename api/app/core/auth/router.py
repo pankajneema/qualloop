@@ -243,14 +243,21 @@ def confirm_password_reset(body: PasswordResetConfirm, request: Request) -> Acce
     resolved = _resolve(_normalise(body.email))
     if resolved is None:
         raise invalid
-    # SPEC-GAP: A-105 - at most 10 failed confirms per account per 24 h, whatever the code or how many codes were
-    # requested. The attempt is counted first (atomic) and given back only when the code was right. When the cap is
-    # reached the answer is the same generic one, so it does not reveal that the account exists.
+    # SPEC-GAP: A-105 - at most 10 failed guesses per account per 24 h against an issued, live code, whatever the code or
+    # how many codes were requested. With no live code nothing is counted (junk confirms cannot lock the owner out).
+    # The slot is taken atomically BEFORE the guess and given back when the guess was right or there was no code. At
+    # the cap the answer is the same generic one, so it does not reveal that the account exists.
+    if not otp.has_live_code(resolved.user_id):
+        raise invalid
     account = [f"rl:pwreset:fail:{resolved.user_id}"]
     if ratelimit.reserve(account, limit=RESET_ACCOUNT_FAILURE_CAP, window_seconds=DAY_SECONDS):
         raise invalid
     # Code check and password hash first; the transaction that locks the user row opens only afterwards.
-    if not otp.consume(resolved.user_id, body.otp):
+    outcome = otp.attempt(resolved.user_id, body.otp)
+    if outcome != "ok":
+        # "none": the code vanished between the check and the guess, so it was not a failed guess
+        if outcome == "none":
+            ratelimit.release(account, window_seconds=DAY_SECONDS)
         raise invalid
     password_hash = hash_password(body.new_password)
     with tenant_tx(resolved.tenant_id, ACTOR_USER, resolved.user_id) as db:

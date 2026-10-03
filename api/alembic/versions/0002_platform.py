@@ -108,6 +108,9 @@ def upgrade() -> None:
     )
     enable_tenant_rls("plants")
     add_updated_at_trigger("plants")
+    # Column-level UPDATE only (security review L-3): id, tenant_id, code and creation audit columns are immutable.
+    op.execute(f"REVOKE UPDATE ON plants FROM {APP}")
+    op.execute(f"GRANT UPDATE (name, address, timezone, updated_at, updated_by) ON plants TO {APP}")
 
     # ------------------------------------------------------------------ users
     op.create_table(
@@ -298,6 +301,12 @@ def upgrade() -> None:
         "idempotency_keys", select_predicate=actor_is_me, insert=True, update_predicate=actor_is_me
     )
     add_updated_at_trigger("idempotency_keys")
+    # Only the stored response is written after the reservation (security review L-3).
+    op.execute(f"REVOKE UPDATE ON idempotency_keys FROM {APP}")
+    op.execute(
+        "GRANT UPDATE (response_status, response_body, updated_at, updated_by) "
+        f"ON idempotency_keys TO {APP}"
+    )
     op.execute(f"GRANT DELETE ON idempotency_keys TO {APP}")  # expiry cleanup only (never suppliers)
 
     # ------------------------------------------------------------------ job_dead_letters (A-89)

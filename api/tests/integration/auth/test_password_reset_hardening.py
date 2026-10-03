@@ -19,7 +19,7 @@ from tests.factories.contract import load
 from tests.factories.db import SeededTenant
 from tests.factories.jobs import declared_queues, running_worker, wait_idle
 from tests.factories.redis_chaos import ChaosRedis, key_command
-from tests.integration.auth.helpers import OTP_RE
+from tests.integration.auth.helpers import OTP_RE, strip_volatile
 from tests.integration.auth.test_password_reset import (
     NEW_PASSWORD,
     OK,
@@ -197,6 +197,69 @@ def test_failures_below_the_account_cap_do_not_block_a_valid_code(
     for i in range(4):
         confirm_reset(api.anonymous(f"198.51.100.{210 + i}"), email, wrong)
     assert confirm_reset(api.anonymous("198.51.100.220"), email, real).status_code in OK
+
+
+def test_junk_confirms_with_no_code_issued_do_not_block_the_later_real_code(
+    api: ApiFactory, seeded: SeededTenant, mailbox: None
+) -> None:
+    """Security review M-1: the account cap counts only failed guesses against an issued, live code."""
+    assert seeded.quality
+    email = seeded.quality.email
+    for i in range(ACCOUNT_FAILURE_CAP + 2):  # no code exists yet; a new IP each time
+        junk = confirm_reset(api.anonymous(f"192.0.2.{10 + i}"), email, f"{i:06d}")
+        assert 400 <= junk.status_code < 500 and junk.status_code != 429
+    request_reset(api.anonymous("192.0.2.100"), email)
+    drain_jobs()
+    real = newest_code(email)
+
+    resp = confirm_reset(api.anonymous("192.0.2.101"), email, real)
+
+    assert resp.status_code == 202, (
+        "junk confirms with no code issued denied the real owner recovery"
+    )
+    assert api.anonymous("192.0.2.102").login(email, NEW_PASSWORD).status_code == 200
+
+
+def test_ten_wrong_guesses_against_a_live_code_still_block_a_later_fresh_valid_code(
+    api: ApiFactory, seeded: SeededTenant, mailbox: None
+) -> None:
+    """Pairs with M-1: junk before any code must not count, but real guesses against live codes do."""
+    assert seeded.quality
+    email = seeded.quality.email
+    for i in range(3):  # junk with no code: must not count towards the cap
+        confirm_reset(api.anonymous(f"192.0.2.{110 + i}"), email, "123123")
+    ip = iter(f"192.0.2.{120 + n}" for n in range(120))
+    for _ in range(2):  # 2 live codes x 5 wrong guesses = 10 counted failures
+        request_reset(api.anonymous(next(ip)), email)
+        drain_jobs()
+        real = newest_code(email)
+        wrong = "000000" if real != "000000" else "111111"
+        for _ in range(5):
+            assert 400 <= confirm_reset(api.anonymous(next(ip)), email, wrong).status_code < 500
+    request_reset(api.anonymous(next(ip)), email)
+    drain_jobs()
+    fresh = newest_code(email)
+
+    resp = confirm_reset(api.anonymous(next(ip)), email, fresh)
+
+    assert 400 <= resp.status_code < 500
+    assert api.anonymous(next(ip)).login(email, NEW_PASSWORD).status_code == 401
+
+
+def test_confirm_with_no_live_code_answers_the_same_generic_422_as_a_wrong_code(
+    api: ApiFactory, seeded: SeededTenant, mailbox: None
+) -> None:
+    assert seeded.quality
+    email = seeded.quality.email
+    no_code = confirm_reset(api.anonymous("192.0.2.240"), email, "424242")
+    request_reset(api.anonymous("192.0.2.241"), email)
+    drain_jobs()
+    real = newest_code(email)
+    wrong = "000000" if real != "000000" else "111111"
+    wrong_resp = confirm_reset(api.anonymous("192.0.2.242"), email, wrong)
+
+    assert no_code.status_code == 422 == wrong_resp.status_code
+    assert strip_volatile(problem(no_code)) == strip_volatile(problem(wrong_resp))
 
 
 # --- (d) per-IP limits -----------------------------------------------------------------------------
