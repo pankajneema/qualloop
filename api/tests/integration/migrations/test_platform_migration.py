@@ -43,12 +43,15 @@ def _function_names(engine: Engine) -> set[str]:
 def test_migration_chain_has_one_head_and_the_platform_revision_follows_the_baseline(
     settings: Settings,
 ) -> None:
+    """One linear chain. Later phases append revisions, so the platform revision (0002) is checked by id."""
     script = ScriptDirectory.from_config(alembic_config(owner_url()))
     heads = script.get_heads()
     assert len(heads) == 1
     head = script.get_revision(heads[0])
     assert head is not None and head.revision != "0001"
-    assert head.down_revision == "0001"
+    platform = script.get_revision("0002")
+    assert platform is not None
+    assert platform.down_revision == "0001"
 
 
 def test_migrations_up_down_up(
@@ -102,7 +105,9 @@ def test_downgrade_one_step_removes_only_the_platform_objects(
 ) -> None:
     cfg = alembic_config(owner_url())
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "-1")
+    command.downgrade(
+        cfg, "0001"
+    )  # to the baseline: later phases sit on top of the platform revision
     try:
         assert _table_names(owner_engine) == set()
         assert not (_function_names(owner_engine) & P01_DEFINER_FUNCTIONS)

@@ -296,3 +296,24 @@ def _stop_leaked_threads() -> Iterator[None]:
     for thread in set(threading.enumerate()) - before:
         if thread.is_alive() and not thread.daemon and thread is not threading.current_thread():
             thread.join(timeout=5)
+
+
+# --------------------------------------------------------------------------------------------------
+# P02 fixtures
+# --------------------------------------------------------------------------------------------------
+@pytest.fixture
+def drain(api: ApiFactory) -> Iterator[Callable[[], None]]:
+    """Run the platform broker's `imports` queue in-process (Redis db 15) for the test's lifetime.
+
+    Calling the returned function blocks until that queue and its delayed retries are empty: explicit
+    synchronisation, never a sleep. The `api` dependency makes sure the app (and so the global broker) exists."""
+    from tests.factories.contract import load
+    from tests.factories.jobs import declared_queues, running_worker, wait_idle
+
+    broker = load("app.worker", "broker")
+    queues = declared_queues(broker)
+    assert "imports" in queues, (
+        f"app.worker declares no `imports` queue (declared: {sorted(queues)})"
+    )
+    with running_worker(broker, {"imports"}, threads=1) as worker:
+        yield lambda: wait_idle(broker, worker, {"imports"}, timeout_ms=120_000)

@@ -52,7 +52,10 @@ def test_tenant_a_cannot_insert_row_for_tenant_b(app_engine: Engine, table: str)
         INSERTERS[table](conn, b)
 
 
-@pytest.mark.parametrize("table", ["plants", "users", "idempotency_keys", "tenants"])
+# P02 adds suppliers, parts and customers (all carry a `name` column that a hijack would overwrite).
+@pytest.mark.parametrize(
+    "table", ["plants", "users", "idempotency_keys", "tenants", "suppliers", "parts", "customers"]
+)
 def test_tenant_a_cannot_update_tenant_b_rows(app_engine: Engine, table: str) -> None:
     a, b = _two_tenants_with_rows(app_engine, table)
     column, value = (

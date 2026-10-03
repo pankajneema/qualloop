@@ -64,21 +64,26 @@ def test_registry_rejects_unknown_event_types() -> None:
     assert "NOT_AN_EVENT" not in load("app.core.outbox.registry", "all_event_types")()
 
 
+BUILT_PHASES = {"P01", "P02"}  # phases whose emitters exist; extend this set when a phase lands
+
+
 @pytest.mark.parametrize(
     "event",
     [
         pytest.param(
             event,
-            marks=pytest.mark.xfail(
-                strict=True, reason=f"emitter for {event} is built in {phase}, not in P01"
+            marks=[]
+            if phase in BUILT_PHASES
+            else pytest.mark.xfail(
+                strict=True, reason=f"emitter for {event} is built in {phase}, not yet"
             ),
         )
         for event, phase in sorted(EVENTS_22_3.items())
     ],
 )
 def test_event_catalogue_every_22_3_event_has_emitter(event: str) -> None:
-    """INV-PLT-15: every 22.3 event has a registered emitting command or job. P01 builds none of them, so each
-    parametrisation is xfail(strict) with the phase named; remove the mark in the phase that adds the emitter."""
+    """INV-PLT-15: every 22.3 event has a registered emitting command or job. A parametrisation is xfail(strict)
+    with the phase named until that phase builds the emitter (P02 built SUPPLIER_STATUS_CHANGED, now a real test)."""
     spec = load("app.core.outbox.registry", "get")(event)
     assert spec is not None
     assert spec.emitters, f"{event} has no registered emitter"

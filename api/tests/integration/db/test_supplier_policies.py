@@ -11,13 +11,15 @@ from sqlalchemy import Connection, Engine, text
 
 from tests.factories.db import create_plant, create_tenant, tenant_conn
 from tests.factories.dberr import expect_db_error
-from tests.factories.rows import INSERTERS
+from tests.factories.rows import INSERTERS, MASTERS_TABLES
 
 pytestmark = pytest.mark.integration
 
 SUPPLIER = "supplier_session"
 RLS = "row-level security"
-DEFAULT_DENY = ["plants", "users", "job_dead_letters"]
+# P02: every masters/imports table is deny-by-default for suppliers. `parts` and `supplier_contacts` get their scoped
+# policies in P04/P05, once the tables their predicates read (ncrs, ncr_scar_links) exist (P02 plan 2.1).
+DEFAULT_DENY = ["plants", "users", "job_dead_letters", *MASTERS_TABLES]
 
 
 @pytest.mark.parametrize("table", DEFAULT_DENY)

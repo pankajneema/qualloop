@@ -19,10 +19,12 @@ P01_TABLES = {
 # DATA_MODEL 0.5: the supplier-reachable tables that exist in P01 (others arrive with later phases).
 P01_SUPPLIER_SCOPED = {"tenants", "activity_log", "outbox_events", "idempotency_keys"}
 # DATA_MODEL 0.4 exceptions (cross-tenant system lookups) + 9 (idempotency_keys expiry index).
+# P02 adds supplier_contacts_mobile_idx (DATA_MODEL 0.4: WhatsApp STOP arrives with only a phone number, A-67).
 NON_TENANT_FIRST_INDEXES = {
     "users_email_uq",
     "outbox_events_pending_idx",
     "outbox_events_dead_idx",
+    "supplier_contacts_mobile_idx",
 }
 IDEMPOTENCY_EXPIRY_TABLE = "idempotency_keys"
 
