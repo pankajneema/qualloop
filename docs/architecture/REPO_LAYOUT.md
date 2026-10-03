@@ -161,7 +161,7 @@ qualloop/
 │   │   └── init/01-roles.sql                  [P00] roles qualloop_owner, qualloop_app, qualloop_sysfn; DBs qualloop, qualloop_test
 │   ├── s3/
 │   │   ├── entrypoint.sh                      [P00] SeaweedFS S3 identity from QL_S3_ACCESS_KEY / QL_S3_SECRET_KEY
-│   │   └── init.sh                            [P00] create buckets qualloop-files, qualloop-quarantine (private)
+│   │   └── init.sh                            [P00] create buckets qualloop-files, qualloop-quarantine (private); **[P02]** CORS on the quarantine bucket: origin `QL_WEB_ORIGIN` only, `PUT` only, headers `Content-Type`/`Content-Length` (A-120)
 │   ├── terraform/                             [P09] modules/{network,rds,redis,s3,ecs,alb_waf,secrets,observability}, envs/{staging,prod}
 │   └── scripts/
 │       ├── check_commit_msg.sh                [P00] commit-msg guard (CLAUDE.md §4)
@@ -184,13 +184,13 @@ qualloop/
 | Service | Image | Ports (host) | Notes |
 | --- | --- | --- | --- |
 | `postgres` | `postgres:16` | 5432 | init scripts from `infra/postgres/init`; healthcheck `pg_isready` |
-| `redis` | `redis:7` | 6379 | **[P01]** ACL file rendered at start from `infra/redis/users.acl.tmpl` (`infra/redis/entrypoint.sh`): default user off, AUTH required, app user `qualloop_app` (ADR-008 key patterns, `@admin`/`@dangerous`/`FLUSHALL`/`KEYS`/`CONFIG` denied); healthcheck authenticates as `qualloop_app` |
-| `s3` | `chrislusf/seaweedfs` (pinned by digest; ADR-020) + `s3-init` one-shot (`amazon/aws-cli`) | 8333 | S3 identity from `infra/s3/entrypoint.sh`; buckets from `infra/s3/init.sh` |
+| `redis` | `redis:7` | 6379 | **[P01]** ACL file rendered at start from `infra/redis/users.acl.tmpl` (`infra/redis/entrypoint.sh`): default user off, AUTH required, app user `qualloop_app` (ADR-008 key patterns, `@admin`/`@dangerous`/`FLUSHALL`/`KEYS`/`CONFIG` denied) and worker user `qualloop_worker` (same, plus `KEYS`, own password, A-122); healthcheck authenticates as `qualloop_app` |
+| `s3` | `chrislusf/seaweedfs` (pinned by digest; ADR-020) + `s3-init` one-shot (`amazon/aws-cli`) | 8333 | S3 identity from `infra/s3/entrypoint.sh` (**[P02]** `-s3.allowedOrigins=$QL_WEB_ORIGIN`, so buckets without their own CORS rules never answer a foreign origin); buckets and quarantine CORS from `infra/s3/init.sh` (A-120). Local/CI only: production bucket CORS is set in IaC (P09) with the real web origin |
 | `mailpit` | `axllent/mailpit` | 1025 (SMTP), 8025 (UI) | |
 | `migrate` | api image, `alembic upgrade head` | — | one-shot; `depends_on: postgres healthy` |
 | `api` | api image, `uvicorn app.main:create_app --factory --reload` | 8000 | `depends_on: migrate completed` |
-| `web` | web image (dev: `pnpm dev`) | 3000 | `NEXT_PUBLIC_*` none secret; proxies `/api` → api:8000 in dev |
-| `worker` · `dispatcher` · `scheduler` | api image; `dramatiq app.worker`, `python -m app.dispatcher`, `python -m app.scheduler` | — | **[P01]** same env as `api`; `depends_on` migrate, s3-init, redis, clamav, mailpit |
+| `web` | web image (dev: `pnpm dev`) | 3000 | `NEXT_PUBLIC_*` none secret; proxies `/api` → api:8000 in dev; **[P02]** gets `QL_S3_PUBLIC_ENDPOINT_URL` for the CSP `connect-src` (A-120) |
+| `worker` · `dispatcher` · `scheduler` | api image; `dramatiq app.worker`, `python -m app.dispatcher`, `python -m app.scheduler` | — | **[P01]** same env as `api`; **[P02]** `dramatiq app.worker` is started without `--queues`, so it consumes every queue declared by the actors imported in `app/worker.py` (including `imports`); `depends_on` migrate, s3-init, redis, clamav, mailpit |
 | `clamav` | `clamav/clamav:1.5.4-debian` (pinned by digest, multi-arch) | 3310 (127.0.0.1) | **[P01]**, approved A-47; healthcheck `clamdcheck.sh` (clamd answers PING only once signatures are loaded; first start downloads them); signatures cached in volume `clamdata` |
 
 ## 4. Makefile targets [P00]
@@ -200,8 +200,9 @@ qualloop/
 | `make up` | `docker compose -f infra/compose.yaml up -d --build --wait` (all services healthy) |
 | `make down` | `docker compose -f infra/compose.yaml down` (volumes kept; `make down V=1` removes volumes) |
 | `make migrate` | `docker compose run --rm migrate` |
-| `make seed` | `docker compose run --rm api uv run python -m seeds.demo` (P00: no-op that exits 0; P01+: real seed) |
+| `make seed` | `docker compose run --rm api uv run python -m seeds.demo` (idempotent: a rerun prints `nothing to do`) |
 | `make test` | `api`: `uv run pytest --cov=app` (unit + integration + security) against compose Postgres, Redis (ACL), S3, mailpit, ClamAV, then `make coverage-core` (`app/core` ≥ 90%, P01); `web`: `pnpm vitest run` |
+| `make e2e` | **[P02]** `up` + `migrate` + `seed`, then `pnpm playwright test` (both projects: `desktop-1440`, `phone-360`) |
 | `make lint-ci` | actionlint (pinned image) over `.github/workflows`; part of `make ci` |
 | `make lint` | `uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run lint-imports`; `pnpm eslint . && pnpm prettier --check . && pnpm tsc --noEmit` |
 | `make fmt` | `uv run ruff format . && uv run ruff check --fix .`; `pnpm prettier --write .` |
@@ -228,11 +229,13 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 | `QL_TEST_DATABASE_URL` / `QL_TEST_DATABASE_URL_OWNER` | `…/qualloop_test` | tests |
 | `QL_REDIS_URL` | `redis://qualloop_app:<QL_REDIS_PASSWORD>@redis:6379/0` (ACL user, AUTH required) | api/worker |
 | `QL_REDIS_PASSWORD` | `qualloop-redis-dev-only` (dev/CI placeholder) | compose redis, Makefile, CI; staging/prod from the secrets manager |
+| `QL_REDIS_WORKER_PASSWORD` | `qualloop-redis-worker-dev-only` (dev placeholder; CI uses a CI-only value) | compose redis + worker, Makefile, CI; staging/prod from the secrets manager (A-122) |
+| `QL_REDIS_WORKER_URL` | `redis://qualloop_worker:<QL_REDIS_WORKER_PASSWORD>@redis:6379/0` (ACL user with `KEYS` for Dramatiq dead-worker maintenance) | `worker` service only; tests build it from the password |
 | `QL_CLAMAV_HOST` / `QL_CLAMAV_PORT` | `clamav` / `3310` (tests: `localhost` / `3310`) | api/worker (files.scan) |
 | `QL_S3_ENDPOINT_URL` | `http://s3:8333` | api/worker |
 | `QL_S3_BUCKET_FILES` / `QL_S3_BUCKET_QUARANTINE` | `qualloop-files` / `qualloop-quarantine` | api/worker |
 | `QL_S3_REGION` | `us-east-1` | api/worker |
-| `QL_S3_PUBLIC_ENDPOINT_URL` | `http://localhost:8333` (host that presigned URLs are signed for) | api |
+| `QL_S3_PUBLIC_ENDPOINT_URL` | `http://localhost:8333` (host that presigned URLs are signed for) | api; **[P02]** web (CSP `connect-src`) |
 | `QL_S3_ACCESS_KEY` / `QL_S3_SECRET_KEY` | `qualloop-dev` / `change-me-local-only` | local only |
 | `QL_SMTP_HOST` / `QL_SMTP_PORT` | `mailpit` / `1025` | worker |
 | `QL_MAIL_FROM` | `QualLoop <no-reply@qualloop.in>` | worker |
@@ -242,7 +245,8 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 | `QL_LOG_LEVEL` | `INFO` | all |
 | `QL_OTEL_EXPORTER_OTLP_ENDPOINT` | empty (disabled locally) | all |
 | `NEXT_PUBLIC_DEFAULT_LOCALE` | `en` | web |
-| `QL_PG_HOST_PORT` / `QL_REDIS_HOST_PORT` | `5432` / `6379` | compose host ports, Makefile |
+| `QL_PG_HOST_PORT` / `QL_REDIS_HOST_PORT` | `5432` / `6379` (use `55432` / `56379` when taken) | compose host ports, Makefile |
+| `QL_WEB_ORIGIN` | `http://localhost:3000` | **[P02]** s3, s3-init: the one origin allowed by bucket CORS (A-120); never `*` |
 
 ## 6. Health endpoints [P00]
 
@@ -261,7 +265,7 @@ Web: `GET /` returns 200 (app shell). Load-balancer target health checks: api �
 | `api-test` | services postgres:16 (+ init roles SQL), mailpit; steps: redis:7 with ACL (same entrypoint/template as compose), ClamAV, SeaweedFS S3 (ADR-020); alembic upgrade head → downgrade base → upgrade head; pytest with coverage (gate 75% overall from P01), then `coverage report --include='app/core/*' --fail-under=90` (P01); further per-module 90% gates are added in the phases that create those modules | every push/PR |
 | `web-lint` | pnpm install --frozen-lockfile; eslint; prettier --check; tsc --noEmit | every push/PR |
 | `web-test` | vitest run | every push/PR |
-| `e2e` | compose up; playwright (desktop + phone-360) | push to main [P00 smoke], PRs from P04 |
+| `e2e` | compose up, migrate, seed (run twice), playwright (desktop-1440 + phone-360) | push to main [P00 smoke], PRs from P04 |
 | `security` | gitleaks; pip-audit; pnpm audit --prod; trivy image scan | [P01] every PR; plus weekly `security-audit.yml` (S-1) |
 | `build` | docker build api + web (no push until P09) | every push/PR |
 | `ai-bench` | benchmark gates (§20.5) | [P03] on changes under `api/app/ai/prompts/**` or provider config |

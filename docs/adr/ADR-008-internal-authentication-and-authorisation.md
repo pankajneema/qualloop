@@ -39,3 +39,13 @@ password reset by email OTP (SPEC-GAP A-46 for Google).
 ## Human decision (2026-10-03)
 
 Google login (A-46) deferred to R1.1; P01 builds email + password and password reset by email OTP only.
+
+## Amendment (human decision 2026-10-03, P02): separate Redis user for job workers
+
+Dramatiq's Redis broker runs a maintenance step inside its dispatch Lua script. That step requeues the unacked messages of dead workers, and it calls `KEYS <namespace>:__acks__.<worker>*`. The app user denies `KEYS`, so after any worker restart (a dead worker is still listed in the heartbeats) every consume loop failed with an ACL error and no jobs ran.
+
+Decision:
+- Add a second ACL user, `qualloop_worker`, used **only by Dramatiq consumer processes** (`dramatiq app.worker`). Its key patterns and denied categories are the same as `qualloop_app`, plus `+keys`.
+- The API, dispatcher and scheduler keep `qualloop_app`, which cannot run `KEYS`.
+- Settings: `QL_REDIS_URL` stays the app connection. The new `QL_REDIS_WORKER_URL` (optional, defaulting to `QL_REDIS_URL`) is used by the consumer broker.
+- Production gets a separate ElastiCache RBAC user with the same rules (P09).

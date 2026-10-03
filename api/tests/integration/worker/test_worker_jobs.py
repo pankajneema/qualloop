@@ -16,7 +16,7 @@ from app.core.config import Settings
 from app.core.logging import configure_logging
 from tests.factories.contract import load
 from tests.factories.db import create_tenant, fetch_all, seed_tenant
-from tests.factories.env import with_redis_db
+from tests.factories.env import worker_redis_url
 from tests.factories.jobs import make_actor, running_worker, unique_queue, wait_idle
 
 pytestmark = pytest.mark.integration
@@ -30,7 +30,7 @@ FAST_RETRY = {
 @pytest.fixture
 def broker(settings: Settings, engine_env: None, redis_client: redis_lib.Redis) -> Iterator[Any]:
     build_broker = load("app.worker", "build_broker")
-    b = build_broker(with_redis_db(settings.redis_url))
+    b = build_broker(worker_redis_url())
     yield b
     b.close()
 

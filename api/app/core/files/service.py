@@ -59,6 +59,11 @@ def _exists(bucket: str, key: str) -> bool:
     return True
 
 
+def in_quarantine(key: str) -> bool:
+    """True while the uploaded object still waits in the quarantine bucket (not yet scanned and promoted)."""
+    return _exists(storage.bucket_quarantine(), key)
+
+
 def presign_download(caller: Actor | None, key: str, *, expires_in: int | None = None) -> str:
     """A presigned GET (at most 15 minutes) for a scanned file of the caller's tenant.
 

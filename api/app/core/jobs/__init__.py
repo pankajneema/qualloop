@@ -121,12 +121,15 @@ def build_broker(redis_url: str) -> Broker:
     )
 
 
-def get_broker() -> Broker:
-    """The process-wide broker, built from settings on first use and installed as dramatiq's global broker."""
+def get_broker(redis_url: str | None = None) -> Broker:
+    """The process-wide broker, built on first use and installed as dramatiq's global broker.
+
+    `redis_url` defaults to `QL_REDIS_URL` (app user). Only the consumer entrypoint passes `QL_REDIS_WORKER_URL`.
+    """
     global _broker
     with _lock:
         if _broker is None:
-            _broker = build_broker(get_settings().redis_url)
+            _broker = build_broker(redis_url or get_settings().redis_url)
             dramatiq.set_broker(_broker)
         return _broker
 

@@ -101,3 +101,38 @@ for _name, _emitter in (
     ("TENANT_SETTINGS_UPDATED", "tenant_settings.update"),
 ):
     register(EventSpec(name=_name, derived=True, emitters=(_emitter,)))
+
+# P02 masters and imports events (A-94, derived names). `SUPPLIER_STATUS_CHANGED` is the blueprint 22.3 event.
+for _name, _emitter in (
+    ("SUPPLIER_CREATED", "suppliers.create"),
+    ("SUPPLIER_UPDATED", "suppliers.update"),
+    ("SUPPLIER_ARCHIVED", "suppliers.archive"),
+    ("CONTACT_CREATED", "contacts.create"),
+    ("CONTACT_UPDATED", "contacts.update"),
+    ("CONTACT_QUALITY_SET", "contacts.set_quality_contact"),
+    ("CONTACT_CODE_REQUESTED", "contacts.verify_start"),
+    ("CONTACT_VERIFIED", "contacts.verify_confirm"),
+    ("CONTACT_DISABLED", "contacts.disable"),
+    ("CONTACT_REPLACED", "contacts.replace"),
+    ("CONSENT_RECORDED", "contacts.consents"),
+    ("CUSTOMER_CREATED", "customers.create"),
+    ("CUSTOMER_UPDATED", "customers.update"),
+    ("CUSTOMER_ARCHIVED", "customers.archive"),
+    ("PART_CREATED", "parts.create"),
+    ("PART_UPDATED", "parts.update"),
+    ("PART_ARCHIVED", "parts.archive"),
+    ("CUSTOMER_PART_LINKED", "customer_parts.create"),
+    ("CUSTOMER_PART_ARCHIVED", "customer_parts.archive"),
+    ("SUPPLIER_PART_LINKED", "supplier_parts.create"),
+    ("SUPPLIER_PART_UPDATED", "supplier_parts.update"),
+    ("SUPPLIER_PART_ARCHIVED", "supplier_parts.archive"),
+    ("IMPORT_UPLOADED", "imports.create"),
+    ("IMPORT_MAPPED", "imports.map"),
+    ("IMPORT_VALIDATION_REQUESTED", "imports.validate"),
+    ("IMPORT_CANCELLED", "imports.cancel"),
+    ("IMPORT_CONFIRMED", "imports.confirm"),
+    ("IMPORT_COMPLETED", "imports.run"),
+):
+    register(EventSpec(name=_name, derived=True, emitters=(_emitter,)))
+
+add_emitter("SUPPLIER_STATUS_CHANGED", "suppliers.change_status")

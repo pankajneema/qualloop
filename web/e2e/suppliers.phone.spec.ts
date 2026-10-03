@@ -6,7 +6,7 @@ import { apiCreateSupplier, apiLogin, DEMO, horizontalOverflow, runToken } from 
 
 test.describe('suppliers list on a 360 px phone', () => {
   test.beforeEach(async ({ page }) => {
-    await apiLogin(page, DEMO.quality);
+    await apiLogin(page, DEMO.approver); // creating an on_watch supplier needs can_approve (A-116)
   });
 
   test('lists, searches and filters without sideways scrolling and with 48 px touch targets', async ({

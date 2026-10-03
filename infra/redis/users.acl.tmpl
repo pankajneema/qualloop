@@ -1,5 +1,5 @@
 # Redis ACL template (INV-SEC-08, ADR-008 D-5, ADR-019). DEV/CI ONLY: entrypoint.sh renders this into a real ACL file,
-# replacing @APP_HASH@ with sha256(QL_REDIS_PASSWORD). Staging/prod use managed Redis RBAC from IaC with
+# replacing @APP_HASH@ / @WORKER_HASH@ with sha256(QL_REDIS_PASSWORD / QL_REDIS_WORKER_PASSWORD). Staging/prod use managed Redis RBAC from IaC with
 # secrets-manager credentials.
 #
 # default user is disabled: no connection without AUTH, and "default" cannot authenticate at all.
@@ -14,3 +14,7 @@ user default off nopass resetkeys -@all
 #   - scripting (EVAL/EVALSHA/SCRIPT LOAD/EXISTS) stays allowed because Dramatiq's broker runs Lua; scripts are still
 #     key-checked by the ACL, so a script cannot touch keys outside the patterns above.
 user qualloop_app on #@APP_HASH@ resetkeys ~sess:* ~user_sessions:* ~otp:* ~rl:* ~idem:* ~sched:* ~dramatiq:* ~dramatiq resetchannels +@all -@admin -@dangerous -flushall -flushdb -keys -config -function -script|flush -script|kill
+#
+# qualloop_worker (A-122, ADR-008 amendment): used only by the Dramatiq worker process. Same key patterns and denials
+# as qualloop_app plus KEYS, because Dramatiq's dispatch Lua calls KEYS during dead-worker maintenance. Own password.
+user qualloop_worker on #@WORKER_HASH@ resetkeys ~sess:* ~user_sessions:* ~otp:* ~rl:* ~idem:* ~sched:* ~dramatiq:* ~dramatiq resetchannels +@all -@admin -@dangerous -flushall -flushdb +keys -config -function -script|flush -script|kill

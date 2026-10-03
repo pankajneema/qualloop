@@ -45,6 +45,7 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
       QL_REDIS_PASSWORD: ${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}
+      QL_REDIS_WORKER_PASSWORD: ${QL_REDIS_WORKER_PASSWORD:-qualloop-redis-worker-dev-only}
       REDISCLI_AUTH: ${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}
     ports:
       - "127.0.0.1:${QL_REDIS_HOST_PORT:-6379}:6379"
@@ -65,6 +66,7 @@ services:
     environment:
       QL_S3_ACCESS_KEY: ${QL_S3_ACCESS_KEY:-qualloop-dev}
       QL_S3_SECRET_KEY: ${QL_S3_SECRET_KEY:-change-me-local-only}
+      QL_WEB_ORIGIN: ${QL_WEB_ORIGIN:-http://localhost:3000}
     ports:
       - "127.0.0.1:8333:8333"
     volumes:
@@ -87,6 +89,9 @@ services:
       QL_S3_ACCESS_KEY: ${QL_S3_ACCESS_KEY:-qualloop-dev}
       QL_S3_SECRET_KEY: ${QL_S3_SECRET_KEY:-change-me-local-only}
       QL_S3_ENDPOINT_URL: http://s3:8333
+      QL_S3_BUCKET_FILES: ${QL_S3_BUCKET_FILES:-qualloop-files}
+      QL_S3_BUCKET_QUARANTINE: ${QL_S3_BUCKET_QUARANTINE:-qualloop-quarantine}
+      QL_WEB_ORIGIN: ${QL_WEB_ORIGIN:-http://localhost:3000}
     volumes:
       - ./s3/init.sh:/init.sh:ro
     entrypoint: ["/bin/sh", "/init.sh"]
@@ -160,8 +165,12 @@ services:
 
   worker:
     image: qualloop-api:dev
+    # No --queues: dramatiq listens to every queue the actors in app.worker declare (default, notifications, imports, ai, ...).
     command: ["dramatiq", "app.worker"]
-    environment: *api-env
+    # Only the worker connects as qualloop_worker (allows KEYS for Dramatiq dead-worker maintenance, A-122).
+    environment:
+      <<: *api-env
+      QL_REDIS_WORKER_URL: redis://qualloop_worker:${QL_REDIS_WORKER_PASSWORD:-qualloop-redis-worker-dev-only}@redis:6379/0
     volumes: &api-code
       - ../api/app:/app/app
       - ../api/alembic:/app/alembic
@@ -199,6 +208,8 @@ services:
     environment:
       NEXT_PUBLIC_DEFAULT_LOCALE: en
       QL_API_PROXY_TARGET: http://api:8000
+      # Browser uploads PUT to presigned URLs on this origin; web/src/proxy.ts adds it to CSP connect-src (A-120).
+      QL_S3_PUBLIC_ENDPOINT_URL: ${QL_S3_PUBLIC_ENDPOINT_URL:-http://localhost:8333}
     ports:
       - "127.0.0.1:3000:3000"
     volumes:

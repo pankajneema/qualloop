@@ -24,7 +24,7 @@ from app.core.db import get_engine
 from tests.factories import db as dbf
 from tests.factories import mail as mailf
 from tests.factories.api import ApiFactory
-from tests.factories.env import owner_url, with_redis_db
+from tests.factories.env import owner_url, pin_loopback, with_redis_db, worker_redis_url
 
 API_ROOT = Path(__file__).resolve().parents[1]
 
@@ -80,12 +80,18 @@ def _test_env(_exclusive_run: None) -> Iterator[None]:
 
     Without this a bare `pytest` would run the app against the dev database (RLS data leaks between dev and
     tests) and the in-process Dramatiq worker would race the dev stack's worker on Redis db 0."""
+    # Every in-process client (and subprocess) must connect to an IP literal, never `localhost` (see pin_loopback).
+    for name in ("QL_TEST_DATABASE_URL", "QL_TEST_DATABASE_URL_OWNER", "QL_REDIS_URL"):
+        if name in os.environ:
+            os.environ[name] = pin_loopback(os.environ[name])
     base = Settings()
-    os.environ["QL_DATABASE_URL"] = base.test_database_url
+    os.environ["QL_DATABASE_URL"] = pin_loopback(base.test_database_url)
     os.environ["QL_DATABASE_URL_OWNER"] = (
         owner_url()
     )  # read by alembic/env.py only, never by the runtime
-    os.environ["QL_REDIS_URL"] = with_redis_db(base.redis_url)
+    os.environ["QL_REDIS_URL"] = with_redis_db(pin_loopback(base.redis_url))
+    # Dramatiq consumers (in-process test workers, subprocesses) connect as the worker ACL user (ADR-008 amendment).
+    os.environ["QL_REDIS_WORKER_URL"] = worker_redis_url(os.environ["QL_REDIS_URL"])
     for name, default in (
         ("QL_SMTP_HOST", "localhost"),
         ("QL_SMTP_PORT", "1025"),

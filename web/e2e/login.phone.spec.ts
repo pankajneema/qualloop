@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+import { clearAuthRateLimits } from './rate-limits';
 import { DEMO, horizontalOverflow } from './support';
+
+// Deliberate failed sign-ins below count against the per-IP cap; start every test with empty counters (rate-limits.ts).
+test.beforeEach(async () => {
+  await clearAuthRateLimits();
+});
 
 // Runs only in the `phone-360` project (360 x 740). DESIGN_SPEC: phone targets >= 48 px, inputs never below 16 px,
 // < 640 px the navigation becomes a bottom bar.

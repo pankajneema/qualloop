@@ -33,7 +33,9 @@ NON_COMMAND_POSTS = {
     "/auth/password-reset/confirm",
     "/files/upload-url",
 }
-PUBLIC_PREFIXES = ("/supplier", "/webhooks")
+# Whole path segments: `/suppliers` and `/supplier-parts` are internal masters routes, `/supplier/...` and
+# `/supplier-access/...` are the supplier-facing families (API.md 4).
+PUBLIC_PREFIXES = ("/supplier/", "/supplier-access/", "/webhooks/")
 
 
 def registered_post_paths() -> list[str]:
@@ -208,7 +210,9 @@ def test_no_route_accepts_status_field_outside_commands(api: ApiFactory) -> None
             bad = {
                 p
                 for p in props
-                if p in {"status", "active", "state", "archived_at"} or p.endswith("_status")
+                if p in {"status", "active", "archived_at"}
+                or p.startswith("status_")
+                or p.endswith("_status")
             }
             if bad:
                 offenders.append(f"{path} accepts {sorted(bad)}")

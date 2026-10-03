@@ -10,7 +10,8 @@ import {
   typography,
 } from './src/design/tokens';
 
-const spacing = Object.fromEntries(space.map((s) => [String(s), `${s}px`]));
+// The spec's 4 px scale, plus 0 so edge utilities (inset-x-0, bottom-0) exist.
+const spacing = { '0': '0px', ...Object.fromEntries(space.map((s) => [String(s), `${s}px`])) };
 
 const fontSize = Object.fromEntries(
   Object.entries(typography).map(([name, t]) => [
@@ -38,6 +39,18 @@ const config: Config = {
       current: 'currentColor',
       ...colors,
       severity: Object.fromEntries(Object.entries(status.severity).map(([k, v]) => [k, v.bg])),
+      // Message colours reuse the spec's status pairs: error = Critical, warning = Major, note = SCAR on time.
+      danger: {
+        DEFAULT: status.severity.critical.text,
+        bg: status.severity.critical.bg,
+        mark: status.severity.critical.mark,
+      },
+      caution: {
+        DEFAULT: status.severity.major.text,
+        bg: status.severity.major.bg,
+        mark: status.severity.major.mark,
+      },
+      info: { DEFAULT: status.scarDue.onTime.text, bg: status.scarDue.onTime.bg },
     },
     spacing,
     borderRadius: {

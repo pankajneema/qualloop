@@ -15,7 +15,7 @@ from sqlalchemy import Engine, text
 from app.core.config import Settings
 from tests.factories.contract import load
 from tests.factories.db import SeededTenant, create_tenant, fetch_all, seed_tenant
-from tests.factories.env import with_redis_db
+from tests.factories.env import worker_redis_url
 from tests.factories.jobs import make_actor, unique_queue
 from tests.integration.auth.helpers import redis_keys, redis_values
 from tests.integration.worker.test_worker_jobs import FAST_RETRY, Boom, run_job, send_failing_job
@@ -27,7 +27,7 @@ METRIC = "qualloop_jobs_dead_lettered_total"
 
 @pytest.fixture
 def broker(settings: Settings, engine_env: None, redis_client: redis_lib.Redis) -> Iterator[Any]:
-    b = load("app.worker", "build_broker")(with_redis_db(settings.redis_url))
+    b = load("app.worker", "build_broker")(worker_redis_url())
     yield b
     b.close()
 

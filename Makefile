@@ -14,19 +14,23 @@ export QL_REDIS_HOST_PORT := $(REDIS_PORT)
 # Dev-only placeholder (same default as infra/compose.yaml). Redis requires AUTH as ACL user qualloop_app (INV-SEC-08).
 REDIS_PASSWORD ?= $(or $(QL_REDIS_PASSWORD),qualloop-redis-dev-only)
 export QL_REDIS_PASSWORD := $(REDIS_PASSWORD)
+# Worker ACL user (A-122): own password, same dev default as infra/compose.yaml.
+REDIS_WORKER_PASSWORD ?= $(or $(QL_REDIS_WORKER_PASSWORD),qualloop-redis-worker-dev-only)
+export QL_REDIS_WORKER_PASSWORD := $(REDIS_WORKER_PASSWORD)
 # Core coverage gate (PHASES P01): app/core >= 90% on top of the overall gate in api/pyproject.toml.
 CORE_COV_MIN ?= 90
 
 # Tests/migrations run on the host against the compose Postgres/Redis (real services, no SQLite).
-TEST_ENV := QL_ENV=local QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
-            QL_TEST_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test \
-            QL_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
-            QL_REDIS_URL=redis://qualloop_app:$(REDIS_PASSWORD)@localhost:$(REDIS_PORT)/0 \
-            QL_S3_ENDPOINT_URL=http://localhost:8333 \
-            QL_SMTP_HOST=localhost QL_SMTP_PORT=1025 \
-            QL_CLAMAV_HOST=localhost QL_CLAMAV_PORT=3310
+TEST_ENV := QL_ENV=local QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@127.0.0.1:$(PG_PORT)/qualloop_test \
+            QL_TEST_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@127.0.0.1:$(PG_PORT)/qualloop_test \
+            QL_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@127.0.0.1:$(PG_PORT)/qualloop_test \
+            QL_REDIS_URL=redis://qualloop_app:$(REDIS_PASSWORD)@127.0.0.1:$(REDIS_PORT)/0 \
+            QL_REDIS_WORKER_PASSWORD=$(REDIS_WORKER_PASSWORD) \
+            QL_S3_ENDPOINT_URL=http://127.0.0.1:8333 \
+            QL_SMTP_HOST=127.0.0.1 QL_SMTP_PORT=1025 \
+            QL_CLAMAV_HOST=127.0.0.1 QL_CLAMAV_PORT=3310
 # Owner credential: migrations only (never in TEST_ENV; tests/conftest.py sets it for alembic from the TEST_* URL).
-MIGRATE_ENV := QL_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test
+MIGRATE_ENV := QL_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@127.0.0.1:$(PG_PORT)/qualloop_test
 # Note: tests switch to Redis database 15 themselves (tests/conftest.py), so the URL above stays on db 0.
 
 .PHONY: help up down deps migrate seed test test-api coverage-core test-web lint lint-api lint-web fmt e2e \
@@ -50,7 +54,7 @@ deps: ## start only what tests need: postgres, redis (ACL), s3 + buckets, mailpi
 migrate: ## run alembic upgrade head in the stack
 	$(COMPOSE) run --rm migrate
 
-seed: ## load demo data (P00: no-op)
+seed: ## load demo data (idempotent: a rerun creates nothing)
 	$(COMPOSE) run --rm api python -m seeds.demo
 
 test: test-api test-web ## api (pytest+coverage) and web (vitest)
@@ -79,8 +83,9 @@ fmt: ## auto-format
 	cd api && uv run ruff format . && uv run ruff check --fix .
 	cd web && $(PNPM) prettier --write .
 
-e2e: ## Playwright smoke against the running stack (make up first)
-	cd web && $(PNPM) playwright test
+e2e: up migrate seed ## full stack up + migrate + seed, then Playwright (desktop-1440 and phone-360)
+	infra/scripts/warm_web.sh
+	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) playwright test
 
 migrations-roundtrip: deps ## alembic upgrade -> downgrade base -> upgrade on the test database
 	cd api && $(TEST_ENV) $(MIGRATE_ENV) uv run alembic upgrade head \

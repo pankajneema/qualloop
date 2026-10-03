@@ -15,9 +15,41 @@ html {
   line-height: calc(20px + var(--ql-devanagari-extra-line));
 }
 
-a {
-  color: var(--ql-color-action);
+/* In the base layer, so utility classes (text-surface on the dark nav) can override link colours. */
+@layer base {
+  a {
+    color: var(--ql-color-action);
+  }
+  a:hover {
+    color: var(--ql-color-action-hover);
+  }
 }
-a:hover {
-  color: var(--ql-color-action-hover);
+
+/* Keyboard focus is always visible (WCAG 2.4.7); the colour is the action token. */
+:focus-visible {
+  outline: 2px solid var(--ql-color-action);
+  outline-offset: 2px;
+}
+
+/* Inputs never go below 16 px on a phone, so browsers do not zoom on focus (DESIGN_SPEC). */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* The pinned primary action and the bottom bar must not cover the end of the page on a phone. */
+@media (max-width: 639px) {
+  body {
+    padding-bottom: calc(var(--ql-space-48) + var(--ql-space-24));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

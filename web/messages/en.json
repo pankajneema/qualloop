@@ -6,5 +6,569 @@
   "home": {
     "title": "QualLoop",
     "subtitle": "App shell is ready. Screens arrive in later phases."
+  },
+  "common": {
+    "language": "Language",
+    "retry": "Try again",
+    "loading": "Loading",
+    "loadMore": "Load more",
+    "cancel": "Cancel",
+    "close": "Close",
+    "signOut": "Sign out",
+    "skipToContent": "Skip to main content",
+    "nav": {
+      "label": "Main navigation",
+      "suppliers": "Suppliers",
+      "parts": "Parts",
+      "imports": "Imports"
+    },
+    "problem": {
+      "title": "We could not finish that",
+      "detail": "The server sent an answer we could not read, so nothing was saved. Check your connection and try again. If it keeps happening, tell support.",
+      "reference": "Reference"
+    },
+    "reason": {
+      "required": "Give a reason. It is kept with the change.",
+      "tooLong": "The reason is too long. Keep it under 2,000 characters."
+    }
+  },
+  "login": {
+    "title": "Sign in",
+    "intro": "Use the email and password your admin set up for QualLoop.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "forgot": "Forgot password?",
+    "bad": {
+      "title": "We could not sign you in",
+      "detail": "The email or password is not right. Nothing was changed. Check both and try again."
+    },
+    "reset": {
+      "title": "Reset password",
+      "intro": "Enter your work email. If it has an account, we send a 6-digit code to it.",
+      "email": "Email",
+      "send": "Send reset code",
+      "sent": "If that email has an account, we have sent a 6-digit code to it. The code works for 10 minutes. Enter it below.",
+      "code": "Code",
+      "newPassword": "New password",
+      "passwordHelp": "At least 12 characters.",
+      "set": "Set new password",
+      "resend": "Use a different email",
+      "back": "Back to login",
+      "doneTitle": "Password changed",
+      "doneDetail": "Your new password is set. Sign in with it now.",
+      "signIn": "Sign in"
+    },
+    "errors": {
+      "email": "Enter your email.",
+      "password": "Enter your password."
+    }
+  },
+  "suppliers": {
+    "title": "Suppliers",
+    "add": "Add supplier",
+    "search": "Search suppliers",
+    "tableLabel": "Suppliers",
+    "noMatch": "No suppliers match this search or these filters. Change the words or clear a filter.",
+    "archived": "Archived",
+    "columns": {
+      "name": "Name",
+      "code": "Code",
+      "category": "Category",
+      "city": "City",
+      "status": "Status",
+      "updated": "Updated"
+    },
+    "filters": {
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "category": "Category",
+      "allCategories": "All categories",
+      "sort": "Sort by",
+      "archived": "Show archived"
+    },
+    "sort": {
+      "name": "Name",
+      "code": "Code",
+      "updated_at": "Recently updated"
+    },
+    "status": {
+      "approved": "Approved",
+      "approved_with_action_plan": "Approved with action plan",
+      "on_watch": "On watch",
+      "blocked": "Blocked",
+      "inactive": "Inactive"
+    },
+    "category": {
+      "raw_material": "Raw material",
+      "bought_out": "Bought-out",
+      "job_work": "Job work",
+      "service": "Service"
+    },
+    "empty": {
+      "title": "No suppliers yet",
+      "body": "Add a supplier with the button above, or import your supplier list from a spreadsheet.",
+      "viewerBody": "Suppliers appear here once a Quality user adds them.",
+      "import": "Import suppliers"
+    },
+    "form": {
+      "code": "Code",
+      "name": "Name",
+      "gstin": "GSTIN",
+      "gstinHelp": "Optional. Leave blank if the supplier has no GSTIN.",
+      "city": "City",
+      "state": "State",
+      "category": "Category",
+      "categoryPlaceholder": "Choose a category",
+      "status": "Status",
+      "statusPlaceholder": "Choose a status",
+      "statusHelpLimited": "Only an approver can start a supplier on another status.",
+      "required": "required",
+      "errors": {
+        "code": "Enter the supplier code.",
+        "name": "Enter the supplier name.",
+        "gstin": "GSTIN must have 15 letters or digits. Check it against the GST certificate.",
+        "category": "Choose a category for this supplier.",
+        "status": "Choose a status for this supplier."
+      }
+    },
+    "new": {
+      "title": "Add supplier",
+      "submit": "Create supplier"
+    },
+    "edit": {
+      "title": "Edit supplier",
+      "titleFor": "Edit {name}",
+      "submit": "Save changes"
+    },
+    "noPermission": {
+      "title": "You do not have permission to change suppliers",
+      "detail": "Viewers can read supplier records but not change them. Ask a Quality user or an Admin."
+    },
+    "detail": {
+      "fallbackTitle": "Supplier",
+      "statusHeading": "Status",
+      "statusChanged": "Changed on {date}",
+      "statusReason": "Reason for the last change",
+      "onlyApprovers": "Only a user who can approve may change a supplier's status.",
+      "detailsHeading": "Details",
+      "notSet": "Not set",
+      "updated": "Updated",
+      "edit": "Edit supplier",
+      "archivedTitle": "This supplier is archived",
+      "archivedDetail": "It was archived on {date}. Its records are kept."
+    },
+    "statusDialog": {
+      "title": "Change status",
+      "consequence": "The new status applies to this supplier straight away. It is recorded with your name and your reason.",
+      "newStatus": "New status",
+      "reason": "Reason"
+    },
+    "archiveDialog": {
+      "open": "Archive supplier",
+      "title": "Archive supplier",
+      "consequence": "The supplier disappears from lists and pickers. Its receipts, cases and contacts are kept.",
+      "reason": "Reason"
+    }
+  },
+  "contacts": {
+    "title": "Contacts",
+    "tableLabel": "Contacts",
+    "verifiedOn": "verified {date}",
+    "columns": {
+      "contact": "Contact",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "badges": {
+      "quality": "Quality contact",
+      "needsVerification": "Needs verification",
+      "disabled": "Disabled",
+      "replaced": "Replaced"
+    },
+    "actions": {
+      "edit": "Edit",
+      "verify": "Verify",
+      "makeQuality": "Set as quality contact",
+      "consents": "Consents",
+      "replace": "Replace",
+      "disable": "Disable"
+    },
+    "empty": {
+      "title": "No contacts yet",
+      "body": "Add the person who should get 8D requests from this supplier. A mobile number or an email is enough to start.",
+      "viewerBody": "Contacts appear here once a Quality user adds them."
+    },
+    "add": {
+      "title": "Add contact",
+      "intro": "Add a mobile number, an email, or both. You verify them next.",
+      "submit": "Add contact"
+    },
+    "edit": {
+      "title": "Edit contact",
+      "consequence": "Changing a mobile number or an email clears its verification.",
+      "submit": "Save contact"
+    },
+    "form": {
+      "name": "Name",
+      "role": "Role",
+      "mobile": "Mobile",
+      "mobileHelp": "With country code, for example +919876543210.",
+      "email": "Email",
+      "errors": {
+        "name": "Enter the contact's name.",
+        "contact": "Add a mobile number or an email.",
+        "mobile": "Use the international format, for example +919876543210."
+      }
+    },
+    "verify": {
+      "title": "Verify {name}",
+      "chooseIntro": "We send a 6-digit code. It works for 10 minutes.",
+      "enterIntro": "Enter the 6-digit code the contact received.",
+      "send": "Send code",
+      "confirm": "Verify",
+      "channel": "Send the code to",
+      "viaMobile": "Mobile {to}",
+      "viaEmail": "Email {to}",
+      "code": "Code",
+      "noDestination": "This contact has no mobile number or email to verify. Edit the contact first.",
+      "doneTitle": "Verified",
+      "doneDetail": "The contact is verified on this channel."
+    },
+    "consents": {
+      "title": "Consents for {name}",
+      "intro": "Record whether the contact agreed to get messages on each channel. An opt-out takes effect at once.",
+      "channel": {
+        "whatsapp": "WhatsApp",
+        "email": "Email",
+        "sms": "SMS"
+      },
+      "state": {
+        "opted_in": "Opted in",
+        "opted_out": "Opted out",
+        "none": "No record"
+      },
+      "optIn": "Record opt-in",
+      "optOut": "Record opt-out"
+    },
+    "replace": {
+      "title": "Replace {name}",
+      "consequence": "{name} is disabled and the new contact takes over, including the quality contact role. The old contact and its history stay on record.",
+      "reason": "Reason",
+      "action": "Replace contact"
+    },
+    "disable": {
+      "title": "Disable contact",
+      "consequence": "{name} will no longer get messages or be able to open supplier links. The contact and its history stay on record.",
+      "reason": "Reason"
+    }
+  },
+  "parts": {
+    "title": "Parts",
+    "add": "Add part",
+    "tableLabel": "Parts",
+    "showArchived": "Show archived",
+    "archived": "Archived",
+    "columns": {
+      "partNo": "Part number",
+      "name": "Name",
+      "category": "Category",
+      "revision": "Revision"
+    },
+    "empty": {
+      "title": "No parts yet",
+      "body": "Add a part with the button above, or import your part list from a spreadsheet.",
+      "viewerBody": "Parts appear here once a Quality user adds them."
+    },
+    "form": {
+      "partNo": "Part number",
+      "name": "Name",
+      "category": "Category",
+      "revision": "Current revision",
+      "required": "required",
+      "errors": {
+        "partNo": "Enter the part number.",
+        "name": "Enter the part name."
+      }
+    },
+    "new": {
+      "title": "Add part",
+      "submit": "Create part"
+    },
+    "noPermission": {
+      "title": "You do not have permission to change parts",
+      "detail": "Viewers can read parts but not change them. Ask a Quality user or an Admin."
+    },
+    "detail": {
+      "fallbackTitle": "Part",
+      "edit": "Edit part",
+      "detailsHeading": "Details",
+      "notSet": "Not set",
+      "archivedTitle": "This part is archived",
+      "archivedDetail": "It was archived on {date}. Its records are kept."
+    },
+    "editDialog": {
+      "title": "Edit part",
+      "submit": "Save changes"
+    },
+    "archiveDialog": {
+      "open": "Archive part",
+      "title": "Archive part",
+      "consequence": "The part disappears from lists and pickers. Its links, receipts and cases are kept.",
+      "reason": "Reason"
+    },
+    "suppliers": {
+      "title": "Suppliers of this part",
+      "link": "Link supplier",
+      "tableLabel": "Supplier links",
+      "columns": {
+        "supplier": "Supplier",
+        "supplierPartNo": "Supplier part number",
+        "ppmTarget": "PPM target",
+        "actions": "Actions"
+      },
+      "noTarget": "Default",
+      "empty": {
+        "title": "No suppliers linked",
+        "body": "Link the suppliers who make this part, and set a PPM target for each one."
+      },
+      "edit": "Edit",
+      "unlink": "Unlink",
+      "unlinkDialog": {
+        "title": "Unlink supplier",
+        "body": "{name} stops being a supplier of this part. The link is archived and can be restored by linking again."
+      },
+      "linkDialog": {
+        "title": "Link supplier",
+        "intro": "Search for the supplier, choose it, and set the PPM target if it differs from the default.",
+        "search": "Search suppliers",
+        "find": "Find",
+        "supplier": "Supplier",
+        "choose": "Choose a supplier",
+        "noResults": "No supplier matches that search.",
+        "supplierPartNo": "Supplier part number",
+        "ppmTarget": "PPM target",
+        "ppmHelp": "A whole number above 0. Leave blank to use the default.",
+        "submit": "Link supplier",
+        "errors": {
+          "supplier": "Choose a supplier.",
+          "ppm": "Use a whole number above 0, for example 500."
+        }
+      },
+      "editDialog": {
+        "title": "Edit link with {name}",
+        "supplierPartNo": "Supplier part number",
+        "ppmTarget": "PPM target",
+        "ppmHelp": "A whole number above 0. Leave blank to use the default.",
+        "ppmError": "Use a whole number above 0, for example 500.",
+        "submit": "Save changes"
+      }
+    },
+    "customers": {
+      "title": "Customers using this part",
+      "link": "Link customer",
+      "tableLabel": "Customer links",
+      "columns": {
+        "customer": "Customer",
+        "customerPartNo": "Customer part number",
+        "actions": "Actions"
+      },
+      "empty": {
+        "title": "No customers linked",
+        "body": "Link the customers who use this part. One part can serve many customers."
+      },
+      "unlink": "Unlink",
+      "unlinkDialog": {
+        "title": "Unlink customer",
+        "body": "{name} stops being linked to this part. The link is archived and can be restored by linking again."
+      },
+      "linkDialog": {
+        "title": "Link customer",
+        "intro": "Choose a customer, or add a new one.",
+        "customer": "Customer",
+        "choose": "Choose a customer",
+        "newCustomer": "Add a new customer",
+        "newName": "Customer name",
+        "newCode": "Customer code",
+        "customerPartNo": "Customer part number",
+        "submit": "Link customer",
+        "errors": {
+          "customer": "Choose a customer.",
+          "name": "Enter the customer name.",
+          "code": "Enter the customer code."
+        }
+      }
+    }
+  },
+  "imports": {
+    "title": "Imports",
+    "new": "New import",
+    "tableLabel": "Imports",
+    "cancel": "Cancel import",
+    "columns": {
+      "file": "File",
+      "entity": "What",
+      "status": "Status",
+      "rows": "Imported / received",
+      "date": "Date"
+    },
+    "entity": {
+      "suppliers": "Suppliers",
+      "parts": "Parts",
+      "supplier_parts": "Supplier parts"
+    },
+    "status": {
+      "uploaded": "Uploaded",
+      "mapped": "Mapped",
+      "validated": "Validated",
+      "importing": "Importing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "empty": {
+      "title": "No imports yet",
+      "body": "Import suppliers, parts or supplier parts from an Excel or CSV file. You review every row before anything is saved."
+    },
+    "noPermission": {
+      "title": "You do not have permission to import files",
+      "detail": "Imports are for Quality users and Admins. Ask one of them to import this file for you."
+    },
+    "detail": {
+      "title": "Import"
+    },
+    "steps": {
+      "label": "Import steps",
+      "upload": "Upload",
+      "map": "Map columns",
+      "validate": "Validate",
+      "preview": "Preview",
+      "confirm": "Confirm",
+      "result": "Result"
+    },
+    "fields": {
+      "suppliers": {
+        "code": "Code",
+        "name": "Name",
+        "gstin": "GSTIN",
+        "city": "City",
+        "state": "State",
+        "category": "Category"
+      },
+      "parts": {
+        "part_no": "Part number",
+        "name": "Name",
+        "category": "Category",
+        "current_revision": "Current revision"
+      },
+      "supplier_parts": {
+        "supplier_code": "Supplier code",
+        "part_no": "Part number",
+        "supplier_part_no": "Supplier part number",
+        "ppm_target": "PPM target"
+      }
+    },
+    "upload": {
+      "title": "Upload file",
+      "intro": "Choose what you are importing and the file. Nothing is saved until you confirm.",
+      "entity": "What are you importing?",
+      "file": "File",
+      "fileHelp": "Excel (.xlsx) or CSV, up to 20 MB. Only the first sheet is read, and row 1 must hold the column names.",
+      "selected": "Selected file: {name}",
+      "submit": "Upload file",
+      "sending": "Sending your file",
+      "checking": "Checking your file for viruses",
+      "wrongType": {
+        "title": "That file type is not accepted",
+        "detail": "Nothing was uploaded. Save the sheet as an Excel (.xlsx) or CSV (.csv) file and choose it again."
+      },
+      "size": {
+        "title": "That file is empty or larger than 20 MB",
+        "detail": "Nothing was uploaded. Split a large file into smaller ones, or choose a file that has rows."
+      },
+      "scan": {
+        "title": "We are still checking your file",
+        "detail": "The virus check is taking longer than usual. Nothing was imported. Wait a minute and upload the file again."
+      },
+      "put": {
+        "title": "Your file could not be sent",
+        "detail": "The file did not reach storage, so nothing was imported. Check your connection and upload it again."
+      }
+    },
+    "map": {
+      "title": "Map columns",
+      "intro": "Match each QualLoop field to a column in {name}. Required fields must be matched.",
+      "required": "required",
+      "notInFile": "Not in file",
+      "missing": "Still to match: {fields}.",
+      "submit": "Validate file",
+      "seenBefore": {
+        "title": "This file was uploaded before",
+        "detail": "Nothing has been processed yet. Look at the previous import first, or carry on if you mean to import it again.",
+        "link": "Open previous import"
+      }
+    },
+    "validate": {
+      "title": "Checking rows",
+      "working": "Checking every row against your data"
+    },
+    "slow": {
+      "title": "This is taking longer than usual",
+      "detail": "The work is still running on the server and your file is safe. Reload this page in a minute to see where it got to."
+    },
+    "preview": {
+      "title": "Preview",
+      "tabsLabel": "Row groups",
+      "tabs": {
+        "errors": "Errors",
+        "duplicates": "Duplicates",
+        "unmapped": "Unmapped",
+        "review": "Needs review",
+        "valid": "Valid"
+      },
+      "columns": {
+        "row": "Row",
+        "reason": "Reason",
+        "values": "Values"
+      },
+      "ready": "Ready to import",
+      "empty": "No rows in this group.",
+      "tableLabel": "Rows",
+      "continue": "Continue to confirm"
+    },
+    "summary": {
+      "label": "Import summary",
+      "received": "Received",
+      "valid": "Valid",
+      "imported": "Imported",
+      "duplicates": "Duplicates",
+      "errors": "Errors",
+      "unmapped": "Unmapped",
+      "review": "Needs review"
+    },
+    "confirm": {
+      "title": "Confirm import",
+      "partialTitle": "Some rows will not be imported",
+      "partialDetail": "Duplicates, errors, unmapped rows and rows that need review are never imported or merged. They are listed in the report.",
+      "accept": "Import valid rows only. The other {skipped} rows are skipped and listed in the report.",
+      "clean": "All {count} rows are valid and will be imported.",
+      "back": "Back to preview",
+      "submit": "Import rows",
+      "working": "Importing rows"
+    },
+    "result": {
+      "title": "Import complete",
+      "download": "Download report",
+      "viewSuppliers": "View suppliers",
+      "viewParts": "View parts",
+      "mismatchTitle": "The counts do not add up",
+      "mismatchDetail": "The rows imported and skipped do not add up to the rows received. Download the report and tell support.",
+      "failedTitle": "Import failed",
+      "failedHeadline": "The import stopped before it finished",
+      "failedDetail": "Some rows may already be imported, and the report shows which. Nothing else was changed. Start a new import to retry the rest.",
+      "cancelledTitle": "Import cancelled",
+      "cancelledDetail": "This import was cancelled and nothing was saved.",
+      "startAgain": "Start a new import"
+    }
   }
 }

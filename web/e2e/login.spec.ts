@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+import { clearAuthRateLimits } from './rate-limits';
 import { apiLogin, apiPost, BASE_URL, DEMO, latestMailBody, runToken, uiLogin } from './support';
+
+// Deliberate failed sign-ins below count against the per-IP cap; start every test with empty counters (rate-limits.ts).
+test.beforeEach(async () => {
+  await clearAuthRateLimits();
+});
 
 // UI contract: docs/build/phases/P02-test-contract.md section 5. Runs against the real compose stack with the demo
 // users of api/seeds/demo.py (`make up && make seed`).

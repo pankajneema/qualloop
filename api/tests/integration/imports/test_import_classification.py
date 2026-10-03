@@ -146,13 +146,15 @@ def test_hindi_text_in_a_utf8_file_is_imported_intact(
     importer: Importer, seeded: SeededTenant, app_engine: Engine
 ) -> None:
     name = "सुंदरम फास्टनर्स"
-    for kind, bom in (("csv", False), ("csv", True), ("xlsx", False)):
+    for index, (kind, bom) in enumerate((("csv", False), ("csv", True), ("xlsx", False))):
         extra = {"bom": bom} if kind == "csv" else {}
-        batch, _ = completed(
-            importer, "suppliers", [supplier_row(10 + int(bom), name=name)], kind=kind, **extra
-        )
+        # a distinct supplier per case, otherwise the later files would be (correct) duplicates
+        row = supplier_row(10 + 2 * index, name=f"{name} {index}")
+        batch, _ = completed(importer, "suppliers", [row], kind=kind, **extra)
         assert batch["rows_imported"] == 1
-    assert {s["name"] for s in suppliers(app_engine, seeded.id)} == {name}
+    assert {s["name"] for s in suppliers(app_engine, seeded.id)} == {
+        f"{name} {i}" for i in range(3)
+    }
 
 
 def test_imported_suppliers_start_approved_with_initial_import_reason_and_are_logged(

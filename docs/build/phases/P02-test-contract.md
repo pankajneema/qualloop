@@ -111,7 +111,10 @@ Query endpoints write nothing, except the report download.
 | `otp:*` | the verification code is stored hashed under a key in the `otp:` family; TTL 1-600 s; neither the code nor the contact's mobile or email appears in a value or key. **doc** A-78, ADR-008 |
 | `rl:*` | send limit 3 per hour per contact; export limit 20 per hour per user. **doc** API.md 6 |
 | `idem:*`, `dramatiq:*` | as P01 |
-| settings | none new. `QL_ENV` is `local` or `ci` in tests so the fake channel is allowed |
+| settings | `QL_ENV` is `local` or `ci` in tests so the fake channel is allowed. New (A-122): `Settings.redis_worker_url` from `QL_REDIS_WORKER_URL`, optional, equal to `redis_url` when unset (`tests/unit/test_redis_worker_setting.py`) |
+| ACL user `qualloop_worker` (A-122, ADR-008 amendment) | same key patterns and denials as `qualloop_app`, plus `+keys`; password `QL_REDIS_WORKER_PASSWORD` (dev default `qualloop-redis-worker-dev-only`, rendered into the ACL file by `infra/redis`). Used only by Dramatiq consumers: `app.worker`'s broker (`get_broker()`) connects with `redis_worker_url`; API, dispatcher and scheduler keep `redis_url`. The app user stays denied `KEYS` |
+| test env | `tests/conftest.py` exports `QL_REDIS_WORKER_URL` = `redis://qualloop_worker:<QL_REDIS_WORKER_PASSWORD or dev default>@127.0.0.1:<port>/15` (IPv4 literal, db 15); in-process workers and the test brokers (`worker_redis_url()`) use it |
+| dead-worker requeue | with the worker URL, a consumer whose dispatch runs maintenance (`maintenance_chance = 1_000_000`) requeues the unacked message of a worker whose heartbeat is older than the timeout, runs it and new jobs, and removes the dead worker from `dramatiq:__heartbeats__` with no ACL error (`test_dead_worker_maintenance.py`). `build_broker(url)` keeps taking the URL as its argument |
 
 ## 4. Database
 
@@ -172,6 +175,14 @@ Components take already translated strings as props and use no `next-intl` hooks
 `desktop-1440` runs every spec except `*.phone.spec.ts`; `phone-360` (Pixel 5 at 360 x 740) runs `smoke.spec.ts` and
 `*.phone.spec.ts` only (`playwright.config.ts` was changed accordingly, `actionTimeout` 15 s). Import specs set a 180 s
 timeout; waits use web-first assertions, no fixed sleeps.
+
+### 5.3a Login rate limit in E2E
+
+The deliberate failed sign-ins of the login specs count against the per-IP cap (5 per 15 minutes), which is not
+loosened. `web/e2e/rate-limits.ts` clears `rl:login:*` and `rl:pwreset:*` in the dev stack's Redis (db 0, ACL user
+`qualloop_app`, SCAN + DEL, raw RESP, no new dependency; URL from `E2E_REDIS_URL` or `QL_REDIS_HOST_PORT` /
+`QL_REDIS_PASSWORD`). `login.spec.ts` and `login.phone.spec.ts` call it in `test.beforeEach`, so reruns, retries and the
+parallel desktop and phone projects stay deterministic. The assertions are unchanged.
 
 ### 5.4 Browser uploads (decision A-120)
 

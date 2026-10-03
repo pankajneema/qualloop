@@ -20,12 +20,14 @@ if init_telemetry(settings, service_name="qualloop-worker"):
     instrument_engine(get_engine())
     instrument_redis()
 
-broker = get_broker()
+broker = get_broker(settings.redis_worker_url)  # consumer user (ADR-008 amendment)
 
 # Importing these records their jobs (queue names: ARCHITECTURE 6.1).
 import app.core.auth.jobs  # noqa: E402
 import app.core.files.jobs  # noqa: E402
-import app.core.outbox.sweeper  # noqa: E402, F401
+import app.core.outbox.sweeper  # noqa: E402
+import app.imports.jobs  # noqa: E402
+import app.masters.jobs  # noqa: E402, F401
 
 declare_jobs(broker)
 

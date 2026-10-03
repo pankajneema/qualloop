@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     )
     # Names the ACL user: redis://qualloop_app:<password>@host:6379/0 (INV-SEC-08, ADR-008).
     redis_url: str = "redis://localhost:6379/0"
+    # Dramatiq consumer processes only (ADR-008 amendment, A-122): the `qualloop_worker` ACL user, which may run KEYS.
+    # Optional; defaults to `redis_url`.
+    redis_worker_url: str = ""
 
     # Object storage (S3 API; SeaweedFS locally, ADR-020). Two private buckets (ADR-011).
     s3_endpoint_url: str = "http://localhost:8333"
@@ -52,6 +55,12 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
 
     @model_validator(mode="after")
+    def _default_redis_worker_url(self) -> Self:
+        if not self.redis_worker_url:
+            self.redis_worker_url = self.redis_url
+        return self
+
+    @model_validator(mode="after")
     def _check_trusted_proxies(self) -> Self:
         parse_cidrs(self.trusted_proxies)  # raises ValueError naming the bad entry
         return self
@@ -67,6 +76,7 @@ class Settings(BaseSettings):
             for name in (
                 "database_url",
                 "redis_url",
+                "redis_worker_url",
                 "s3_access_key",
                 "s3_secret_key",
                 "session_secret",

@@ -31,7 +31,10 @@ def worker(api: ApiFactory, mailbox: None) -> Iterator[tuple[Any, Any, set[str]]
     broker = load("app.worker", "broker")
     queues = declared_queues(broker)
     assert queues, "app.worker declares no queues"
-    with running_worker(broker, queues) as running:
+    # ONE consumer thread: send jobs for the same contact are ordered by request nonce and an older job that runs after
+    # a newer one is deliberately superseded (app.masters.otp.store). With two threads that order is a race, so the
+    # count of delivered messages would vary between runs.
+    with running_worker(broker, queues, threads=1) as running:
         yield broker, running, queues
 
 

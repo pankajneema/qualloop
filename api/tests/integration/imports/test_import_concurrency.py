@@ -178,6 +178,10 @@ def test_a_job_message_without_a_tenant_id_never_runs(
 ) -> None:
     bid = validated_batch(importer, 3)
     broker = load("app.worker", "broker")
-    broker.get_actor("imports.run").send_with_options(kwargs={"batch_id": bid}, max_retries=0)
+    invalid_job = load("dramatiq.middleware", "MiddlewareError")
+    with pytest.raises(
+        invalid_job
+    ):  # P01 TenantContext.before_enqueue raises InvalidJob (a MiddlewareError) at send
+        broker.get_actor("imports.run").send_with_options(kwargs={"batch_id": bid}, max_retries=0)
     drain()
     assert importer.get(bid)["status"] == "validated"
