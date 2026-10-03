@@ -35,7 +35,8 @@ def _ident(name: str) -> str:
 
 
 def std_columns(*, tenant_fk: bool = True) -> list[sa.Column[Any]]:
-    """STD columns. `id` has no server default: the app generates UUIDv7 (ADR-005)."""
+    """STD columns. The app generates `id` as UUIDv7 (ADR-005); the server default
+    `app_uuid_v7()` is the SQL-side fallback for seeds and triggers."""
     tenant_col: sa.Column[Any] = (
         sa.Column(
             "tenant_id", sa.UUID(), sa.ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False

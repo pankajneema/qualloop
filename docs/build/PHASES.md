@@ -39,7 +39,7 @@ Nothing outside the phase scope may be built early.
   containers, IaC); backup/restore; security baseline & secrets.
 - Scaffold: `/api` (FastAPI app factory, settings, health `/healthz` `/readyz`, structured logging),
   `/web` (Next.js app shell, tokens.ts from DESIGN_SPEC, fonts, i18n setup en/hi), `/infra`
-  (docker compose: postgres16, redis, minio, mailpit), `Makefile` (`up`, `down`, `test`, `lint`, `fmt`,
+  (docker compose: postgres16, redis, S3-compatible store (SeaweedFS, ADR-020), mailpit), `Makefile` (`up`, `down`, `test`, `lint`, `fmt`,
   `migrate`, `seed`), CI pipeline, pre-commit hooks, `.env.example`, `.gitignore`.
 - Alembic baseline with the RLS helper (function to set `app.tenant_id`, policy template).
 - `docs/build/STATUS.md`, `OPEN_QUESTIONS.md`, `docs/CHANGELOG.md` initialised.
@@ -61,7 +61,7 @@ Nothing outside the phase scope may be built early.
 
 **Scope**
 - Tables: `tenants`, `plants`, `users`, `activity_log`, `outbox_events` (§6.1). UUIDv7, audit columns, RLS.
-- Auth: email+password (argon2/bcrypt), Google login, sessions, password reset by email OTP, login rate limit.
+- Auth: email+password (argon2/bcrypt), sessions, password reset by email OTP, login rate limit. (Google login deferred to R1.1 — human decision 2026-10-03, A-46.)
 - Roles: admin / quality / viewer + `can_approve` flag (§2.2). Permission decorator for commands.
 - Tenant context: middleware sets `app.tenant_id` per request; worker job wrapper sets it per job.
 - Command framework: base command handler doing authorize → validate → mutate → activity_log
@@ -144,6 +144,8 @@ Nothing outside the phase scope may be built early.
 - Requirement requested and past due_at → overdue condition true.
 - Rejected renewal upload while current certificate valid → still compliant; current_certificate_id unchanged.
 - Rejected first-time upload → requirement missing after new due date.
+- Requirement REQUESTED and past `due_at` with nothing uploaded → status stays REQUESTED, overdue is computed (`test_requested_requirement_stays_requested_when_overdue`).
+- SQE asks for a replacement while the current certificate is valid → `renewal_requested_at` / `renewal_due_at` set, status stays APPROVED (`test_sqe_replacement_request_sets_renewal_fields`).
 - Compliance % formula (§12) including pending exclusion.
 - AI never sets certificate status; AI outage → manual entry still works.
 
@@ -329,7 +331,7 @@ human approves go-live for the first pilot plant.
 
 Scope (§5.2): data-health screen (§19), supplier response-behaviour metrics (§18), target hierarchy via
 `quality_targets`, risk override UI (§15.5), Supplier Quality Evidence Pack export (§21.3), certificate
-exception UI (§13), plant holiday calendar for SLAs. Each item is its own mini-phase with the same protocol.
+exception UI (§13), plant holiday calendar for SLAs, Google login for internal users (A-46, human decision 2026-10-03). Each item is its own mini-phase with the same protocol.
 
 ---
 

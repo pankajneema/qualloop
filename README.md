@@ -79,7 +79,7 @@ the Makefile runs it through `npx pnpm@10.34.6` (override with `make PNPM=pnpm .
 `corepack enable pnpm` works too).
 
 ```
-make up        # postgres, redis, minio (+ buckets), mailpit, migrate, api, web; waits until healthy
+make up        # postgres, redis, s3 (+ buckets), mailpit, migrate, api, web; waits until healthy
 make down      # stop (V=1 also drops volumes)
 make test      # api: pytest + coverage gate against compose Postgres/Redis; web: vitest
 make lint      # ruff, ruff format --check, mypy --strict, lint-imports, eslint, prettier --check, tsc
@@ -95,14 +95,14 @@ make ci        # the same steps as .github/workflows/ci.yml, locally
 | http://localhost:3000 | web (Next.js) |
 | http://localhost:8000/healthz, /readyz | api liveness / readiness |
 | http://localhost:8025 | Mailpit (local email) |
-| http://localhost:9001 | MinIO console (dev credentials in `infra/compose.yaml`) |
+| http://localhost:8333 | S3 API (SeaweedFS; credentials `QL_S3_ACCESS_KEY` / `QL_S3_SECRET_KEY`) |
 
 If 5432 or 6379 is already used on your machine, publish on other host ports: `QL_PG_HOST_PORT=55432 make up`
 (and use the same value for `make test`). Dev passwords in `infra/` are placeholders for local use only; real
 secrets come from a secrets manager or CI secrets and never from the repo. Copy `.env.example` to `.env` for
 host-side tooling; `.env` is gitignored.
 
-Note: the MinIO image is `bitnamilegacy/minio` (pinned by digest) because official MinIO images are no longer
-published on Docker Hub. It is unmaintained and used for local development and CI only; staging/prod use the
-cloud provider's object storage. Container base images are pinned by digest; `make ci` also runs `pip-audit`,
+Note: local and CI object storage is SeaweedFS (`chrislusf/seaweedfs`, S3 API on port 8333), pinned by digest,
+dev/CI only; staging/prod use the cloud provider's object storage. Buckets are created by the  one-shot and
+anonymous access is denied. Container base images are pinned by digest; `make ci` also runs `pip-audit`,
 `pnpm audit --prod` and a Trivy image scan (these need network access).

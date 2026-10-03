@@ -50,3 +50,7 @@ advisory lock, then `max(split_part(no, '-', k)::int) + 1` (k = 4 for NCR, 3 for
 ## Revisit when
 - PostgreSQL 18+ is available on the managed service (native `uuidv7()`), or
 - a tenant needs non-INR currency (Part B; would add a currency column — new ADR).
+
+## Human decision (2026-10-03)
+
+`amount_paise` (BIGINT) approved (A-01). UI and exports show rupees with Indian grouping.

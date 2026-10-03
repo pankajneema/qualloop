@@ -94,6 +94,7 @@ Delegation rules:
 
 - Modular monolith + workers (§22). Python 3.12 / FastAPI / SQLAlchemy 2 / Pydantic v2 / Alembic;
   PostgreSQL 16 with RLS on `tenant_id`; Redis job queue; S3-compatible storage; Next.js + TypeScript strict.
+  Python quality gates: `ruff check`, `ruff format` (no black), `mypy --strict`.
 - Every tenant table: `id` UUIDv7, `tenant_id`, audit columns; indexes start with `tenant_id`.
 - Money as BIGINT paise. Timestamps `timestamptz` UTC; business dates in plant timezone.
 - State changes only through command endpoints; each command writes `activity_log` + `outbox_events`

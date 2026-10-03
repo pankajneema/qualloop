@@ -1,6 +1,6 @@
 # ADR-012 — AI provider abstraction and governance
 
-- Status: Accepted (2026-10-03, design only); still pending — provider choice is a paid external service → **requires human approval**
+- Status: Accepted (2026-10-03); production provider selected, no account yet
 - Spec: §4.9, §20 (policy, extraction, 8D assist, NCR helpers, benchmarks), §24.1.3, §6.4 `ai_extractions`
 
 ## Context
@@ -35,3 +35,7 @@ product promises India hosting (§26.2).
 ## Revisit when
 - Benchmark gates fail for the current provider on two consecutive prompt iterations, or
 - cost per certificate exceeds a budget set by the human at P03, or in-region model availability changes.
+
+## Human decision (2026-10-03)
+
+No paid services or accounts now; local stand-ins in dev. Production targets (accounts created only when needed, each still subject to CLAUDE.md §5 before use): AWS Bedrock + Textract. India-region (ap-south-1) availability of the chosen models is checked in P03 before any account is opened. Dev uses the `fake` provider (A-91).

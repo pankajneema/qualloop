@@ -1,6 +1,6 @@
 # ADR-017 — Hosting and deployment
 
-- Status: Accepted (2026-10-03, design only); still pending — cloud account and spend are paid services → **requires human approval (CLAUDE.md §5)**
+- Status: Accepted (2026-10-03); AWS ap-south-1 selected, no account yet
 - Spec: §21.1 (TLS, encryption at rest, daily encrypted backups), §22 (managed Postgres with RLS, Redis, S3-compatible storage in an Indian region, single Indian region), §5.3 (no Kubernetes, no multi-region), §26.2 (India hosting)
 
 ## Options considered
@@ -40,3 +40,7 @@ Rough Stage-1 monthly cost to be estimated in P09 with the AWS pricing calculato
 - Cloud bill > 20% of MRR for 3 consecutive months, or
 - a customer contract requires a specific cloud or on-premise deployment (Stage 3), or
 - GCP asia-south2 latency advantage is measured as material for NCR plants (> 50 ms p95 difference).
+
+## Human decision (2026-10-03)
+
+No paid services or accounts now; local stand-ins in dev. Production targets (accounts created only when needed, each still subject to CLAUDE.md §5 before use): AWS ap-south-1 (Mumbai) as designed here. No cloud account or IaC apply until a phase needs it and the human approves (A-91).

@@ -1,6 +1,6 @@
 # ADR-011 — File storage, signed URLs, virus scanning
 
-- Status: Accepted (2026-10-03, design only); still pending — ClamAV needs its own process/container → **requires human approval (CLAUDE.md §5, A-47)**
+- Status: Accepted (2026-10-03); ClamAV approved (A-47)
 - Spec: §20.2 (PDF/JPG/PNG ≤ 20 MB, content-type check + virus scan), §21.1 (private buckets, signed URLs ≤ 15 min), §22 (S3-compatible, Indian region)
 
 ## Context
@@ -29,7 +29,7 @@ Uploads come from internal users and from suppliers on slow phones.
    GuardDuty, or explicitly accept "content-type check only" as a recorded risk.
 5. Buckets private, Block Public Access, SSE-KMS, versioning on the files bucket; quarantine lifecycle 7 days;
    exports/reports lifecycle 30 days (regenerable).
-6. Local: MinIO with the same two buckets.
+6. Local: SeaweedFS S3 gateway with the same two buckets (ADR-020).
 
 ## Consequences
 - Worker image or sidecar must include `clamd` with signature updates (`freshclam`) — memory ≈ 1–1.5 GB.
@@ -38,3 +38,7 @@ Uploads come from internal users and from suppliers on slow phones.
 ## Revisit when
 - Scan queue lag > 2 min p95, or ClamAV memory cost exceeds the worker task size (→ GuardDuty or dedicated scanner service), or
 - storage > 1 TB (→ lifecycle tiering).
+
+## Human decision (2026-10-03)
+
+ClamAV approved as the virus scanner (A-47): a `clamav` container in dev/CI from P01, and in production when hosting is set up. Local S3-compatible storage in dev (see ADR-020).

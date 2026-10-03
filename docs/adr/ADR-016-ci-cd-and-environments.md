@@ -1,12 +1,12 @@
 # ADR-016 — CI/CD and environments
 
-- Status: Accepted (2026-10-03, design only); still pending — CI host (GitHub Actions) assumes a GitHub remote; the repo currently has none → **human to confirm**
+- Status: Accepted (2026-10-03, design only); still pending — GitHub Actions as CI host (a GitHub remote exists; CI has not run there yet) → **human to confirm**
 - Spec: §21.2 (security tests in CI), §24.1, CLAUDE.md §3–§5 (gates; no prod without approval), PHASES P00/P09
 
 ## Options considered
 | Concern | Options | Chosen |
 | --- | --- | --- |
-| CI | **GitHub Actions**, GitLab CI, Buildkite | GitHub Actions (service containers for Postgres/Redis/MinIO; OIDC to AWS for deploys) |
+| CI | **GitHub Actions**, GitLab CI, Buildkite | GitHub Actions (service containers for Postgres/Redis; SeaweedFS S3 as steps (ADR-020); OIDC to AWS for deploys) |
 | Deploy target | ECS rolling via CI; CodeDeploy blue/green | **ECS rolling update with circuit-breaker rollback** (Stage 1) |
 | Migrations | at app start; **one-off task before rollout** | one-off ECS task as `qualloop_owner` |
 | Branching | GitFlow; **trunk-based** with short-lived branches | trunk-based; `main` always deployable to staging |

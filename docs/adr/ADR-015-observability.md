@@ -1,6 +1,6 @@
 # ADR-015 — Observability
 
-- Status: Accepted (2026-10-03, design only); still pending — hosted error tracking (Sentry) is a paid external service → **requires human approval**
+- Status: Accepted (2026-10-03); Sentry free tier selected, no account yet
 - Spec: §22 (error tracking, structured logs, uptime checks, queue dashboard), §22.4 (technical + product metrics), §21.5 (personal data)
 
 ## Options considered
@@ -39,3 +39,7 @@
 
 ## Revisit when
 - CloudWatch cost > 15% of infra bill, or trace sampling needs tail-based sampling (→ Grafana/Tempo stack, new ADR).
+
+## Human decision (2026-10-03)
+
+No paid services or accounts now; local stand-ins in dev. Production targets (accounts created only when needed, each still subject to CLAUDE.md §5 before use): Sentry free tier for error tracking (DPDP cross-border note in this ADR still applies). Dev logs to stdout only (A-91).

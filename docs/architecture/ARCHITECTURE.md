@@ -290,8 +290,8 @@ rolls out; the app uses `qualloop_app`. Expand/contract migration policy (ADR-01
 
 | Env | Where | Data | Providers | Deploy trigger | Access |
 | --- | --- | --- | --- | --- | --- |
-| local | Docker Compose (`infra/compose.yaml`): postgres:16, redis:7, minio, mailpit, (clamav if approved), api, worker, dispatcher, scheduler, web | seed (`make seed`) | email → Mailpit; WhatsApp → console/fake adapter; AI → fake provider (fixtures) | `make up` | developer |
-| CI | GitHub Actions (repo host to be confirmed by human, ADR-016) with service containers postgres:16, redis:7, minio | fixtures/factories | fakes only | every push / PR | — |
+| local | Docker Compose (`infra/compose.yaml`): postgres:16, redis:7, s3 (SeaweedFS, ADR-020), mailpit, (clamav if approved), api, worker, dispatcher, scheduler, web | seed (`make seed`) | email → Mailpit; WhatsApp → console/fake adapter; AI → fake provider (fixtures) | `make up` | developer |
+| CI | GitHub Actions (repo host to be confirmed by human, ADR-016) with service containers postgres:16, redis:7, SeaweedFS S3 (started as steps, ADR-020) | fixtures/factories | fakes only | every push / PR | — |
 | staging | AWS ap-south-1, staging account | synthetic seed + anonymised samples only (never real customer data) | provider sandboxes (WhatsApp test number, email sandbox, AI provider with test key) | merge to `main` (auto) | team |
 | prod | AWS ap-south-1, prod account | customer data | live | tag `vX.Y.Z` + manual approval in CI (CLAUDE.md §5) | restricted, break-glass |
 

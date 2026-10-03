@@ -32,3 +32,7 @@ needs them (REPO_LAYOUT.md marks the phase).
 ## Revisit when
 - api threadpool saturation (queueing > 50 ms p95) at < 60% CPU, or
 - an endpoint must hold many concurrent slow I/O calls (none planned in Part A).
+
+## Human decision (2026-10-03)
+
+Python formatting uses `ruff format`; black is not used. Gates: `ruff check`, `ruff format --check`, `mypy --strict` (CLAUDE.md §6 updated).

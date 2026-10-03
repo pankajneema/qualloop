@@ -156,10 +156,12 @@ qualloop/
 │   ├── compose.yaml                           [P00] services below
 │   ├── postgres/
 │   │   └── init/01-roles.sql                  [P00] roles qualloop_owner, qualloop_app, qualloop_sysfn; DBs qualloop, qualloop_test
-│   ├── minio/
+│   ├── s3/
+│   │   ├── entrypoint.sh                      [P00] SeaweedFS S3 identity from QL_S3_ACCESS_KEY / QL_S3_SECRET_KEY
 │   │   └── init.sh                            [P00] create buckets qualloop-files, qualloop-quarantine (private)
 │   ├── terraform/                             [P09] modules/{network,rds,redis,s3,ecs,alb_waf,secrets,observability}, envs/{staging,prod}
 │   └── scripts/
+│       ├── check_commit_msg.sh                [P00] commit-msg guard (CLAUDE.md §4)
 │       └── restore_drill.sh                   [P09]
 ├── design/
 │   └── README.md                              [P00] where design-canvas exports and screenshots live; source of truth stays docs/design/DESIGN_SPEC.md
@@ -180,7 +182,7 @@ qualloop/
 | --- | --- | --- | --- |
 | `postgres` | `postgres:16` | 5432 | init scripts from `infra/postgres/init`; healthcheck `pg_isready` |
 | `redis` | `redis:7` | 6379 | healthcheck `redis-cli ping` |
-| `minio` | `minio/minio` (+ `minio/mc` one-shot init) | 9000, 9001 | buckets from `infra/minio/init.sh` |
+| `s3` | `chrislusf/seaweedfs` (pinned by digest; ADR-020) + `s3-init` one-shot (`amazon/aws-cli`) | 8333 | S3 identity from `infra/s3/entrypoint.sh`; buckets from `infra/s3/init.sh` |
 | `mailpit` | `axllent/mailpit` | 1025 (SMTP), 8025 (UI) | |
 | `migrate` | api image, `alembic upgrade head` | — | one-shot; `depends_on: postgres healthy` |
 | `api` | api image, `uvicorn app.main:create_app --factory --reload` | 8000 | `depends_on: migrate completed` |
@@ -218,11 +220,11 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 | `QL_ENV` | `local` | api |
 | `QL_DATABASE_URL` | `postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop` | api/worker |
 | `QL_DATABASE_URL_OWNER` | `postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop` | migrate |
-| `QL_TEST_DATABASE_URL` | `…/qualloop_test` | tests |
+| `QL_TEST_DATABASE_URL` / `QL_TEST_DATABASE_URL_OWNER` | `…/qualloop_test` | tests |
 | `QL_REDIS_URL` | `redis://redis:6379/0` | api/worker |
-| `QL_S3_ENDPOINT_URL` | `http://minio:9000` | api/worker |
+| `QL_S3_ENDPOINT_URL` | `http://s3:8333` | api/worker |
 | `QL_S3_BUCKET_FILES` / `QL_S3_BUCKET_QUARANTINE` | `qualloop-files` / `qualloop-quarantine` | api/worker |
-| `QL_S3_ACCESS_KEY` / `QL_S3_SECRET_KEY` | `minioadmin` / `change-me` | local only |
+| `QL_S3_ACCESS_KEY` / `QL_S3_SECRET_KEY` | `qualloop-dev` / `change-me-local-only` | local only |
 | `QL_SMTP_HOST` / `QL_SMTP_PORT` | `mailpit` / `1025` | worker |
 | `QL_SESSION_SECRET` / `QL_HMAC_SECRET` | `change-me-32-bytes-min` | api |
 | `QL_PUBLIC_BASE_URL` | `http://localhost:3000` | links in messages |
@@ -230,6 +232,7 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 | `QL_LOG_LEVEL` | `INFO` | all |
 | `QL_OTEL_EXPORTER_OTLP_ENDPOINT` | empty (disabled locally) | all |
 | `NEXT_PUBLIC_DEFAULT_LOCALE` | `en` | web |
+| `QL_PG_HOST_PORT` / `QL_REDIS_HOST_PORT` | `5432` / `6379` | compose host ports, Makefile |
 
 ## 6. Health endpoints [P00]
 
@@ -245,7 +248,7 @@ Web: `GET /` returns 200 (app shell). Load-balancer target health checks: api �
 | Job | Steps | Runs |
 | --- | --- | --- |
 | `api-lint` | uv sync --frozen; ruff check; ruff format --check; mypy --strict app; lint-imports | every push/PR |
-| `api-test` | services postgres:16 (+ init roles SQL), redis:7, minio; alembic upgrade head → downgrade base → upgrade head; pytest with coverage (gate 75% overall from P01; per-module 90% gates added in the phases that create those modules) | every push/PR |
+| `api-test` | services postgres:16 (+ init roles SQL), redis:7, SeaweedFS S3 (steps, ADR-020); alembic upgrade head → downgrade base → upgrade head; pytest with coverage (gate 75% overall from P01; per-module 90% gates added in the phases that create those modules) | every push/PR |
 | `web-lint` | pnpm install --frozen-lockfile; eslint; prettier --check; tsc --noEmit | every push/PR |
 | `web-test` | vitest run | every push/PR |
 | `e2e` | compose up; playwright (desktop + phone-360) | push to main [P00 smoke], PRs from P04 |

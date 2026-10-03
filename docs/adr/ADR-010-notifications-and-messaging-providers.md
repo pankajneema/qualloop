@@ -1,6 +1,6 @@
 # ADR-010 — Notifications and messaging providers
 
-- Status: Accepted (2026-10-03, design only); still pending — provider choices require human approval (paid external services, CLAUDE.md §5)
+- Status: Accepted (2026-10-03); production providers selected, no accounts yet
 - Spec: §17 (channels, templates, consent, delivery tracking, 15-min fallback), §22.2, §22.3, §21.5
 
 ## Context
@@ -40,3 +40,7 @@ every flow works with email + link alone (§4.10). Templates in English and Hind
 ## Revisit when
 - WhatsApp delivery failure rate > 5% weekly, or template approval latency blocks a release (→ consider BSP), or
 - a customer requires SMS (→ resolve A-65 with DLT registration).
+
+## Human decision (2026-10-03)
+
+No paid services or accounts now; local stand-ins in dev. Production targets (accounts created only when needed, each still subject to CLAUDE.md §5 before use): AWS SES for email; WhatsApp Cloud API behind the channel adapter. Dev uses the `fake` WhatsApp channel and mailpit (A-91).

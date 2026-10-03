@@ -2,7 +2,7 @@
 
 | Phase | Name | Status | Tag | Approved on | Open SPEC-GAPs |
 | --- | --- | --- | --- | --- | --- |
-| P00 | Architecture & scaffold | Verified | p00-verified | 2026-10-03 | 90 open (A-01…A-90); .env.example missing (blocked by permission rule) |
+| P00 | Architecture & scaffold | Verified | p00-verified | 2026-10-03 | 80 open; 11 decided 2026-10-03 (A-01, A-46, A-47, A-48, A-63, A-73, A-74, A-86, A-87, A-89, A-91) |
 | P01 | Platform foundation | Not started | — | — | — |
 | P02 | Masters & imports | Not started | — | — | — |
 | P03 | Documents, certificates & AI extraction | Not started | — | — | — |

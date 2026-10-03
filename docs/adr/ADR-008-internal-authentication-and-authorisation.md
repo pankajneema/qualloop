@@ -35,3 +35,7 @@ password reset by email OTP (SPEC-GAP A-46 for Google).
 ## Revisit when
 - SSO/SAML requested by a paying customer (Part B §29), or
 - Redis availability incidents cause > 1 forced logout per month (→ replica, S-02).
+
+## Human decision (2026-10-03)
+
+Google login (A-46) deferred to R1.1; P01 builds email + password and password reset by email OTP only.

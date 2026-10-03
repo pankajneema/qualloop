@@ -4,7 +4,7 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 
 | ID | Phase | Spec § | Question | Conservative default chosen | Status (open / decided by human) |
 | --- | --- | --- | --- | --- | --- |
-| A-01 | P01 | §6.3 vs CLAUDE.md §6 | Money columns are named `amount_inr` in the spec but must be BIGINT paise. Keep the name or rename? | Rename to `amount_paise` (BIGINT); API field `amount_paise`; UI formats ₹ (ADR-005) | open |
+| A-01 | P01 | §6.3 vs CLAUDE.md §6 | Money columns are named `amount_inr` in the spec but must be BIGINT paise. Keep the name or rename? | Rename to `amount_paise` (BIGINT); API field `amount_paise`; UI formats ₹ (ADR-005) | decided by human 2026-10-03: approved — BIGINT `amount_paise`; UI and exports show rupees (₹, Indian grouping) |
 | A-02 | P01 | §6, §6.1 | Type/target of `created_by`/`updated_by` for supplier-session, system or AI actors | uuid, no FK; = users.id for internal users, NULL otherwise; `activity_log.actor_type/actor_id` is the actor of record | open |
 | A-03 | P01 | §6.1 | Is a user bound to one tenant; is email unique globally or per tenant? | One tenant per user; email globally unique (case-insensitive) | open |
 | A-04 | P01 | §6.1 | Does `users.plant_ids` restrict access or only filter? | Restricts plant-scoped objects for quality/viewer (out of scope → 404); admin sees all; supplier-level objects tenant-wide; app-enforced | open |
@@ -49,9 +49,9 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 | A-43 | P03 | §7.3, §8 C10 | Certificates without an expiry date | Approval requires `expiry_date` (DB CHECK); reviewer enters one | open |
 | A-44 | P03 | §8 C10 | Requirements no longer mandatory after category change | Rows kept; compliance counts only doc types mandatory for the current category; new mandatory types get rows | open |
 | A-45 | P03 | §7.4, §12, §15.2 | `renewal_due_at` value; pending_review past due_at | renewal_due_at = renewal_requested_at + grace_days; pending_review past due counts as due & non-compliant for compliance %, but CERT_MISSING fires only for `requested` | open |
-| A-46 | P01 | PHASES P01 vs §21.1 | Google login is not in the blueprint | Not built until the human confirms | open |
-| A-47 | P01 | §20.2, §21.1, CLAUDE.md §5 | ClamAV container needs its own process | Interface built; files stay `pending_scan` (fail closed) until the human approves ClamAV or GuardDuty, or accepts the risk | open |
-| A-48 | P09 | §26.4, PHASES P09 | Minimal billing not specified | Not built beyond `tenants.plan` text until specified | open |
+| A-46 | P01 | PHASES P01 vs §21.1 | Google login is not in the blueprint | Not built until the human confirms | decided by human 2026-10-03: Google login deferred to R1.1 (not built in P01) |
+| A-47 | P01 | §20.2, §21.1, CLAUDE.md §5 | ClamAV container needs its own process | Interface built; files stay `pending_scan` (fail closed) until the human approves ClamAV or GuardDuty, or accepts the risk | decided by human 2026-10-03: ClamAV approved as the virus scanner (container in dev; production when hosting is set up) |
+| A-48 | P09 | §26.4, PHASES P09 | Minimal billing not specified | Not built beyond `tenants.plan` text until specified | decided by human 2026-10-03: minimal billing stays in P09; its exact scope is raised as SPEC-GAPs in P09 |
 | A-49 | P07 | §15.2 | Is CERT_EXPIRING limited to mandatory requirements? | Yes, consistent with CERT_EXPIRED (current certificates of mandatory requirements) | open |
 | A-50 | P10 | §5.2, §13 | No way to create exceptions in R1 | Confirmed: no R1 path (no seed, no admin backdoor); endpoint and UI in P10 | open |
 | A-51 | P07 | §12, §14.5 | Which defect events count in a closed period's PPM? | Receipts by grn_date in period; events recorded (`created_at`) before cutoff with attribution state as of cutoff; later rejections on those receipts listed as "Corrections to earlier periods" | open |
@@ -66,7 +66,7 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 | A-60 | P07 | §6.6, §15.2 | Risk scope across plants | Per supplier; per-plant rules fire per plant (source = plant) and all count; rule caps apply across plants | open |
 | A-61 | P07 | §12 | Response-time medians: cohort by issue date or event date? | SCARs whose event (`first_response_at` / `accepted_at`) falls in the period | open |
 | A-62 | P08 | §16 | "Turned High risk" window on My Work | Current calendar month | open |
-| A-63 | P05 | §20.3, §20.4, §6 | No table for 8D review assist / NCR category suggestions | Proposed technical table `ai_suggestions`; not created and feature waits until approved | open |
+| A-63 | P05 | §20.3, §20.4, §6 | No table for 8D review assist / NCR category suggestions | Proposed technical table `ai_suggestions`; not created and feature waits until approved | decided by human 2026-10-03: approved technical table `ai_suggestions` (no new business fields) |
 | A-64 | P04 | §20.4, §24.1.3 | Interactive voice-to-text vs "AI only from background jobs" | Browser/OS speech API on the device; no server AI call; hidden if unsupported | open |
 | A-65 | P05 | §17.1 | SMS in R1? Which provider? | Not built in R1; fallback is email | open |
 | A-66 | P05 | §22.3 | Daily-scan "last sent message" granularity | Any channel, same recipient contact, same object and template_code, status sent/delivered/read | open |
@@ -76,8 +76,8 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 | A-70 | P01 | §2.2, §21.2 | Role matrix details | Admin ⊇ Quality; Viewer read-only, no Excel export, no original document/evidence download (photos inline allowed) | open |
 | A-71 | P04 | §6 Numbering | `{seq}` width/reset, YYMM timezone, scope | Min 3 digits (per `SCAR-2611-014`), resets monthly; NCR per plant, SCAR/DN per tenant; YYMM in plant tz (DN: `dn_date`) | open |
 | A-72 | P04 | §6.3 | Quantity type and unit of measure | Integer units (BIGINT); non-integer import rows rejected with reason | open |
-| A-73 | P01 | §22.2 | Durable Idempotency-Key storage needs a table not in §6 | Technical table `idempotency_keys` (needs approval) | open |
-| A-74 | P01 | §6, §7.5, §21.1 | Technical columns not listed in §6 | `users.password_hash` (§21.1), `archived_at` on suppliers/customers/parts/customer_parts/supplier_parts (§7.5), `supplier_scores_monthly.inputs` (§14.5) — approve | open |
+| A-73 | P01 | §22.2 | Durable Idempotency-Key storage needs a table not in §6 | Technical table `idempotency_keys` (needs approval) | decided by human 2026-10-03: approved technical table `idempotency_keys` |
+| A-74 | P01 | §6, §7.5, §21.1 | Technical columns not listed in §6 | `users.password_hash` (§21.1), `archived_at` on suppliers/customers/parts/customer_parts/supplier_parts (§7.5), `supplier_scores_monthly.inputs` (§14.5) — approve | decided by human 2026-10-03: approved technical columns as listed in DATA_MODEL.md |
 | A-75 | P02 | §6.2 | `supplier_parts.status` values | `active` / `inactive` | open |
 | A-76 | P03 | §6.4 | `documents.status` values | `pending_scan` / `available` / `quarantined` | open |
 | A-77 | P03 | §6.4 | Unit of `ai_extractions.cost` | `cost_usd_micros` bigint (provider cost, not business money) | open |
@@ -89,8 +89,9 @@ Format — one entry per gap; code that depends on it carries `# SPEC-GAP: <id>`
 | A-83 | P09 | §21.5 | Retention of activity_log, messages, outbox_events, sessions; anonymisation vs append-only audit | Retain everything; no deletion until legal review; audit stores contact mobile/email masked | open |
 | A-84 | P00 | DESIGN_SPEC Colour | DESIGN_SPEC names "blue", "amber", "grey" for certificate-valid / expiring and risk-low / medium without hex values; no value for the single dialog shadow | Reuse spec pairs: blue #D1E9FF/#194185, amber #FEF0C7/#93370D, grey #F2F4F7/#344054; shadow omitted until specified (marked SPEC-GAP in web/src/design/tokens.ts) | open |
 | A-85 | P05 | §24.2, §9 C7, §21.1 | §24.2 puts the token in `POST /supplier-access/{token}/verify-otp`, but the security review (D-4) requires the token never to stay in a URL | Path kept verbatim; browser calls it with `{token}` = `current`, authenticated by the HttpOnly `ql_pre` cookie set at `/s/{token}` exchange; raw tokens in the path rejected | open |
-| A-86 | P05 | §6.5, §21.1 | OTP failure count needs durable storage (security review D-6); `magic_links` has no such column | Technical column `magic_links.otp_failed_count` (int, default 0); 10 failures → link revoked | open |
-| A-87 | P05 | §6.5, §22.2 | Linking a message to the magic link it carried (link created in the send job, review M3) | Technical column `messages.magic_link_id` (FK, nullable); plaintext token never stored; lost send re-issues the link | open |
+| A-86 | P05 | §6.5, §21.1 | OTP failure count needs durable storage (security review D-6); `magic_links` has no such column | Technical column `magic_links.otp_failed_count` (int, default 0); 10 failures → link revoked | decided by human 2026-10-03: approved technical column `magic_links.otp_failed_count` |
+| A-87 | P05 | §6.5, §22.2 | Linking a message to the magic link it carried (link created in the send job, review M3) | Technical column `messages.magic_link_id` (FK, nullable); plaintext token never stored; lost send re-issues the link | decided by human 2026-10-03: approved technical column `messages.magic_link_id` |
 | A-88 | P06 | §6.3 | Effectiveness `signature` key is singular `defect_category`; a multi-NCR SCAR can span several categories | Store `defect_categories` as an array in the signature json | open |
-| A-89 | P01 | §22.2 | Durable record of dead-lettered jobs needs a table not in §6 | Technical table `job_dead_letters` (needs approval); outbox dead letters stay in `outbox_events` | open |
+| A-89 | P01 | §22.2 | Durable record of dead-lettered jobs needs a table not in §6 | Technical table `job_dead_letters` (needs approval); outbox dead letters stay in `outbox_events` | decided by human 2026-10-03: approved technical table `job_dead_letters` |
 | A-90 | P01 | §6 | Format/positivity CHECKs not stated in the spec (plant code regex, E.164 mobile, GSTIN regex, consent source list, qty > 0, amount > 0, containment qty ≥ 0, non-blank text) | Keep them, labelled (A-90) in DATA_MODEL.md §0.8; human may drop any | open |
+| A-91 | P01 | CLAUDE.md §5, §22 | Paid external services and production providers | None now; local stand-ins (fake providers, mailpit, local S3, ClamAV container) in dev. Production targets, no accounts until needed: AWS ap-south-1, SES, WhatsApp Cloud API via adapter, Sentry free tier, Bedrock/Textract (India-region availability checked in P03) | decided by human 2026-10-03 |

@@ -24,7 +24,7 @@ TEST_ENV := QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@
 help:
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ -/' | sort
 
-up: ## start postgres, redis, minio, mailpit, migrate, api, web (waits until healthy)
+up: ## start postgres, redis, s3 (SeaweedFS), mailpit, migrate, api, web (waits until healthy)
 	$(COMPOSE) up -d --build --wait
 
 down: ## stop the stack (V=1 also removes volumes)

@@ -24,5 +24,5 @@ Hard rules:
 - Do not modify tests written by qa-engineer. If one seems wrong, stop and report.
 - No new dependency that needs its own server without the orchestrator's (human's) approval.
 
-Done means: all phase tests green, `ruff`, `black --check`, `mypy --strict` clean, migrations reversible,
+Done means: all phase tests green, `ruff check`, `ruff format --check`, `mypy --strict` clean, migrations reversible,
 API docs (OpenAPI) updated. Report the exact commands you ran and their trimmed output.
