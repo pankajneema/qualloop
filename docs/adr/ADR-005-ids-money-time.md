@@ -1,6 +1,6 @@
 # ADR-005 — IDs, money and time
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §6 (uuid ids, numbering), §6.3 `amount_inr`, §7.3 (plant timezone), §9 C6 (calendar hours), §12, §14.5; CLAUDE.md §6
 
 ## Context

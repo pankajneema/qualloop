@@ -1,6 +1,6 @@
 # ADR-012 — AI provider abstraction and governance
 
-- Status: Proposed — provider choice is a paid external service → **requires human approval**
+- Status: Accepted (2026-10-03, design only); still pending — provider choice is a paid external service → **requires human approval**
 - Spec: §4.9, §20 (policy, extraction, 8D assist, NCR helpers, benchmarks), §24.1.3, §6.4 `ai_extractions`
 
 ## Context

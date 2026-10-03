@@ -1,6 +1,6 @@
 # ADR-008 — Internal authentication and authorisation
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §2.2 (roles Admin / Quality / Viewer, `can_approve`), §6.1 users, §21.1 (argon2/bcrypt, login rate limits, secure sessions)
 
 ## Context

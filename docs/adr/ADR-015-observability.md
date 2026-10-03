@@ -1,6 +1,6 @@
 # ADR-015 — Observability
 
-- Status: Proposed — hosted error tracking (Sentry) is a paid external service → **requires human approval**
+- Status: Accepted (2026-10-03, design only); still pending — hosted error tracking (Sentry) is a paid external service → **requires human approval**
 - Spec: §22 (error tracking, structured logs, uptime checks, queue dashboard), §22.4 (technical + product metrics), §21.5 (personal data)
 
 ## Options considered

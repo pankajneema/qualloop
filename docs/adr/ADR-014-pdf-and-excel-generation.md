@@ -1,6 +1,6 @@
 # ADR-014 — PDF and Excel generation
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §16 C14 (Monthly Supplier Quality Report PDF, supplier report card, Excel export from every list), §22 (PDF: HTML → PDF; PDFs in worker queue), §8 C3 (reconciliation report Excel)
 
 ## Options considered

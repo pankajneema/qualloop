@@ -1,6 +1,6 @@
 # ADR-018 — Backup and restore
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §21.1 (daily encrypted backups), §21.4 (RPO 24 h, RTO 8 h; quarterly restore test with measured restore time)
 
 ## Options considered

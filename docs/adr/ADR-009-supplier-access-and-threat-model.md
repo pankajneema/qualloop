@@ -1,6 +1,6 @@
 # ADR-009 — Supplier access (magic link + OTP + scoped session) and threat model
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §4.2, §8 C2 (180-day re-verification, replace/disable), §9 C7, §21.2, §21.5
 
 ## Context

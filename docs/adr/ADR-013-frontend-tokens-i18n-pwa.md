@@ -1,6 +1,6 @@
 # ADR-013 — Frontend architecture, design tokens, i18n, PWA
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §4.3 (30-second capture), §5.3 (no native/offline), §9 C7 (supplier pages on low-end Android/3G), §22 (Next.js, TypeScript, Tailwind, PWA), DESIGN_SPEC.md
 
 ## Context

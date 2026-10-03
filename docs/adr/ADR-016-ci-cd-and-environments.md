@@ -1,6 +1,6 @@
 # ADR-016 — CI/CD and environments
 
-- Status: Proposed — CI host (GitHub Actions) assumes a GitHub remote; the repo currently has none → **human to confirm**
+- Status: Accepted (2026-10-03, design only); still pending — CI host (GitHub Actions) assumes a GitHub remote; the repo currently has none → **human to confirm**
 - Spec: §21.2 (security tests in CI), §24.1, CLAUDE.md §3–§5 (gates; no prod without approval), PHASES P00/P09
 
 ## Options considered

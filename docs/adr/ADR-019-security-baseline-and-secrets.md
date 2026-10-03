@@ -1,6 +1,6 @@
 # ADR-019 — Security baseline and secrets
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §21.1 controls, §21.2 CI security tests, §21.5 DPDP Act 2023, §21.6 (later roadmap — not built in R1)
 
 ## Decision — controls mapped to §21.1

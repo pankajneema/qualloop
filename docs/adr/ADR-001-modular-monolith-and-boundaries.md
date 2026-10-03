@@ -1,6 +1,6 @@
 # ADR-001 — Modular monolith with enforced module boundaries
 
-- Status: Proposed (P00, awaiting human approval)
+- Status: Accepted (2026-10-03)
 - Spec: §5.3 (no microservices/Kafka/Kubernetes), §22, §22.1, §24.1
 
 ## Context

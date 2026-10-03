@@ -1,6 +1,6 @@
 # ADR-017 — Hosting and deployment
 
-- Status: Proposed — cloud account and spend are paid services → **requires human approval (CLAUDE.md §5)**
+- Status: Accepted (2026-10-03, design only); still pending — cloud account and spend are paid services → **requires human approval (CLAUDE.md §5)**
 - Spec: §21.1 (TLS, encryption at rest, daily encrypted backups), §22 (managed Postgres with RLS, Redis, S3-compatible storage in an Indian region, single Indian region), §5.3 (no Kubernetes, no multi-region), §26.2 (India hosting)
 
 ## Options considered

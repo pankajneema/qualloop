@@ -1,6 +1,6 @@
 # ADR-006 — Outbox, job queue, idempotency, retries, dead-letter, scheduler
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §22 (Redis + worker queue), §22.2 (outbox, idempotency, retries, dead-letter after 5 with alert), §22.3, §22.4 (queue dashboard)
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-004 — Tenancy and row-level security (requests, workers, supplier sessions)
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §6 ("Row-level security on tenant_id from the first migration"), §21.1, §21.2, §24.1.1
 
 ## Context

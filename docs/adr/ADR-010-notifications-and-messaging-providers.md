@@ -1,6 +1,6 @@
 # ADR-010 — Notifications and messaging providers
 
-- Status: Proposed — provider choices require human approval (paid external services, CLAUDE.md §5)
+- Status: Accepted (2026-10-03, design only); still pending — provider choices require human approval (paid external services, CLAUDE.md §5)
 - Spec: §17 (channels, templates, consent, delivery tracking, 15-min fallback), §22.2, §22.3, §21.5
 
 ## Context

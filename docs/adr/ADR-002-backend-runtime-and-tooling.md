@@ -1,6 +1,6 @@
 # ADR-002 — Backend runtime and tooling
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §22 (FastAPI, SQLAlchemy, Pydantic), CLAUDE.md §6
 
 ## Context

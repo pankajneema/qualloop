@@ -1,6 +1,6 @@
 # ADR-011 — File storage, signed URLs, virus scanning
 
-- Status: Proposed — ClamAV needs its own process/container → **requires human approval (CLAUDE.md §5, A-47)**
+- Status: Accepted (2026-10-03, design only); still pending — ClamAV needs its own process/container → **requires human approval (CLAUDE.md §5, A-47)**
 - Spec: §20.2 (PDF/JPG/PNG ≤ 20 MB, content-type check + virus scan), §21.1 (private buckets, signed URLs ≤ 15 min), §22 (S3-compatible, Indian region)
 
 ## Context

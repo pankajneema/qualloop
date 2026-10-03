@@ -1,6 +1,6 @@
 # ADR-007 — Metrics engine: canonical rejected quantity, cohort vs cash, as-of snapshots, computed states
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §4.6–4.7, §7.3, §7.4, §10, §11.4, §12, §12.1, §13, §14, §15
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-003 — Command framework, state machines and audit log
 
-- Status: Proposed
+- Status: Accepted (2026-10-03)
 - Spec: §4.11, §7, §7.5, §22.2, §24.1.2, §24.2
 
 ## Context
