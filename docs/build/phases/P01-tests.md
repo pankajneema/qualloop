@@ -95,3 +95,34 @@ are in `P01-test-contract.md`. Fixtures: `conftest.py` (role guard, `_test_env`,
 - `test_scanner_detects_a_provider_import`, `test_blueprint_22_3_lists_nineteen_events`: self-checks of the test helpers.
 
 Every introspection loop (`tenant_tables`, `_definers`, route scans) asserts its subject exists first, so none can pass on an empty schema.
+
+## Review regressions (items 1 to 19 of the review fix list)
+
+Paths relative to `api/tests/`. Contract: `P01-test-contract.md` section 5. "Now" = result against `94b8616`.
+
+| # | Rule | Tests | Now |
+| --- | --- | --- | --- |
+| 1 | Client IP behind trusted proxies | `integration/auth/test_client_ip_and_login_race.py`: `test_two_clients_behind_a_trusted_proxy_have_separate_per_ip_login_counters`, `test_one_client_behind_a_trusted_proxy_is_not_locked_out_by_everyone_elses_failures`, `test_activity_log_ip_is_the_forwarded_client_not_the_proxy`, `test_the_client_is_the_rightmost_forwarded_entry_that_is_not_a_trusted_proxy`; controls: `test_a_forged_left_hand_entry_does_not_dodge_...`, `test_a_forged_forwarded_header_from_an_untrusted_peer_is_ignored_for_rate_limiting`, `..._is_not_written_to_the_audit_log`, `test_by_default_no_proxy_is_trusted_...`, `test_a_malformed_forwarded_entry_...`, `test_a_trusted_peer_without_a_forwarded_header_...` | first four fail; rest pass |
+| 2 | 10 concurrent wrong logins, at most 5 non-429 | same file: `test_ten_concurrent_wrong_password_logins_cannot_exceed_the_five_failure_limit` | fails (10 got through) |
+| 3 | Session resurrection | `integration/auth/test_session_resurrection.py`: `test_load_session_does_not_resurrect_a_session_deleted_between_its_read_and_its_refresh`, `..._ended_by_delete_user_sessions`, `test_load_session_still_slides_the_idle_window_for_a_live_session` (control) | first two fail |
+| 4 | Default outbox enqueue in a fresh process | `integration/outbox/test_dispatcher_default_enqueue.py`: `test_default_enqueue_in_a_fresh_dispatcher_process_puts_the_job_on_the_registered_queue`, `test_default_enqueue_sends_one_message_per_registered_handler_each_on_its_own_queue`, `test_an_event_without_registered_handlers_is_marked_processed_and_sends_nothing` | first two fail (`ActorNotFound`) |
+| 5 | Last-admin guard | `integration/commands/test_last_admin_guard.py` (deactivate / demote / inactive admin / per tenant / concurrent demote and deactivate, 6 rounds each) | pass (guard exists, was untested) |
+| 6 | `can_approve` through `run_command` | `integration/commands/test_can_approve_pipeline.py` (+ `probe.py`) | pass (was vacuous: no +CA command is registered in P01) |
+| 7 | `QL_ENV` required, strict outside local/ci | `unit/test_settings_hardening.py`: `test_settings_without_ql_env_fails_...`, `test_env_is_a_required_field_...`, `test_an_unknown_ql_env_value_is_rejected`, `test_outside_local_and_ci_a_default_placeholder_is_rejected`, `..._the_s3_keys_may_not_be_left_unset`, `..._session_secret_equal_to_hmac_secret_is_rejected` | fail |
+| 8 | No owner URL in runtime settings | same file: `test_runtime_settings_have_no_database_url_owner_field`, `test_the_owner_url_is_not_exposed_...`, `test_settings_outside_local_do_not_require_an_owner_url`, `test_only_alembic_env_reads_the_owner_url_from_the_environment` | fail |
+| 9 | No PII in DB errors | `integration/db/test_users_grants_and_error_leaks.py`: `test_the_engine_hides_statement_parameters`, `test_a_failing_statement_does_not_put_the_bound_email_in_the_exception_text`; `integration/worker/test_dead_letter_hardening.py`: `test_a_job_failing_on_a_database_error_does_not_store_the_bound_email_in_last_error`, `test_a_unique_violation_in_a_job_does_not_store_the_duplicate_email_from_the_detail_line` | fail |
+| 10 | `users` column-level UPDATE | `integration/db/test_users_grants_and_error_leaks.py`: `test_qualloop_app_may_update_only_the_documented_columns_of_users`, `test_no_table_wide_update_privilege_on_users_for_the_app_role`, `test_updating_an_immutable_user_column_is_denied[...]` | fail |
+| 11 | UUIDv7 monotonicity | `unit/test_core_primitives.py`: `test_ids_stay_strictly_increasing_across_a_per_millisecond_counter_overflow`, `..._do_not_embed_an_earlier_time`, `test_a_clock_that_steps_backwards_still_produces_increasing_ids[1,3,500]` | fail |
+| 12 | Scanner size gate | `integration/files/test_scan_size_limit.py` | fail |
+| 13 | `Idempotency-Key` is a UUID | `integration/commands/test_idempotency_key_format.py` | 7 of 8 bad keys fail (the 300-character key is already refused) |
+| 14 | Password reset hardening | `integration/auth/test_password_reset_hardening.py`: (a) `test_a_redelivered_older_reset_job_does_not_overwrite_the_newest_emailed_code`; (b) `test_consume_after_the_code_expired_does_not_leave_an_otp_key_without_a_ttl`; (c) `test_after_ten_failed_confirms_in_a_day_even_a_fresh_valid_code_is_refused`; (d) `test_reset_request_is_limited_per_ip_with_retry_after`, `test_reset_confirm_is_limited_per_ip_with_retry_after`; (e) `test_reset_request_for_a_known_email_still_answers_202_when_the_job_cannot_be_enqueued` | those six fail; controls pass |
+| 15 | Chunked body 413 | `integration/errors/test_chunked_body_limit.py` | fail (400) |
+| 16 | Dead-letter metric | `integration/worker/test_dead_letter_hardening.py::test_dead_lettering_a_job_increments_...`, `test_each_dead_lettered_message_counts_once` | fail |
+| 17 | Traceback hygiene | same file: `test_a_dead_lettered_dramatiq_message_does_not_keep_the_raw_email_from_the_exception`, `test_the_dead_lettered_message_still_names_the_exception_type` | first fails |
+| 18 | Hook bus | `integration/commands/test_hook_bus.py` | pass (untested before) |
+| 19 | Isolation | `conftest.py`: `_exclusive_run` (advisory lock), `_track_dramatiq_workers`, `_stop_leaked_threads` | infra, not a test |
+
+Fixture changes forced by items 7 and 8 (existing tests, assertions unchanged): `unit/test_placeholder.py::test_startup_fails_outside_local_with_default_settings`
+(no longer sets the owner URL; its final "valid production settings" step now also sets S3 keys and a Redis URL with credentials);
+`conftest.py` and `integration/test_migrations.py`, `integration/migrations/test_platform_migration.py` read the owner URL through
+`factories/env.py::owner_url()` instead of `Settings.test_database_url_owner`.

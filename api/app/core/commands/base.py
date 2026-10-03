@@ -8,7 +8,7 @@ handler cannot forget either. A failure anywhere rolls everything back, includin
 There is no generic "update status": a state change is always a named command with its own permission and event.
 """
 
-import importlib
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +29,10 @@ log = structlog.get_logger("commands")
 
 IDEMPOTENCY_REQUIRED = "required"
 IDEMPOTENCY_OPTIONAL = "optional"
+
+_UUID_TEXT = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 @dataclass(frozen=True)
@@ -74,9 +78,6 @@ class CommandResult:
 
 _COMMANDS: list[Command[Any, Any]] = []
 
-# Modules of `core` that register commands when imported. Other modules add theirs from `app.api.router`.
-_CORE_COMMAND_MODULES = ("app.core.platform.commands",)
-
 
 def register[In: BaseModel, Out: BaseModel](command: Command[In, Out]) -> Command[In, Out]:
     if any(
@@ -89,8 +90,7 @@ def register[In: BaseModel, Out: BaseModel](command: Command[In, Out]) -> Comman
 
 
 def all_commands() -> Sequence[Command[Any, Any]]:
-    for module in _CORE_COMMAND_MODULES:
-        importlib.import_module(module)
+    """The registered commands. Command modules register themselves when imported; `app.api.router` imports them."""
     return tuple(_COMMANDS)
 
 
@@ -113,6 +113,20 @@ def run_command[In: BaseModel, Out: BaseModel](
                 field_error("Idempotency-Key", "required", "Send a unique Idempotency-Key header.")
             ],
         )
+
+    if idempotency_key is not None:
+        if not _UUID_TEXT.match(idempotency_key):  # API.md 1.6: the key is a client-generated UUID
+            raise ValidationFailed(
+                "The Idempotency-Key header must be a UUID.",
+                errors=[
+                    field_error(
+                        "Idempotency-Key",
+                        "invalid",
+                        "Send a UUID, for example from crypto.randomUUID().",
+                    )
+                ],
+            )
+        idempotency_key = idempotency_key.lower()
 
     with tenant_tx(actor.tenant_id, ACTOR_USER, actor.user_id) as session:
         reservation: idempotency.Reservation | None = None

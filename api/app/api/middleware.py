@@ -95,29 +95,42 @@ class BodySizeLimitMiddleware:
             return
         declared = _declared_length(scope)
         if declared is not None and declared > self.max_bytes:
-            request = Request(scope)
-            response = problem_response(
-                request,
-                status=413,
-                code="payload_too_large",
-                title=PayloadTooLarge.title,
-                detail="The request body is too large.",
-            )
-            await response(scope, receive, send)
+            await self._too_large(scope, receive, send)
             return
+        # No Content-Length (chunked) or a declared length that is within the limit: read the body here, counting, so
+        # that THIS middleware answers 413 the moment the limit is crossed. (Raising inside `receive` would surface as a
+        # 400/500 from whatever parses the body.) A body is at most `max_bytes`, so buffering it is cheap.
+        buffered: list[MutableMapping[str, Any]] = []
         received = 0
-        limit = self.max_bytes
-
-        async def limited_receive() -> MutableMapping[str, Any]:
-            nonlocal received
+        while True:
             message = await receive()
-            if message["type"] == "http.request":
-                received += len(message.get("body", b""))
-                if received > limit:
-                    raise PayloadTooLarge("The request body is too large.")
-            return message
+            buffered.append(message)
+            if message["type"] != "http.request":  # client went away
+                break
+            received += len(message.get("body", b""))
+            if received > self.max_bytes:
+                await self._too_large(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
 
-        await self.app(scope, limited_receive, send)
+        async def replay() -> MutableMapping[str, Any]:
+            if buffered:
+                return buffered.pop(0)
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
+        response = problem_response(
+            Request(scope),
+            status=413,
+            code="payload_too_large",
+            title=PayloadTooLarge.title,
+            detail="The request body is too large.",
+        )
+        await response(scope, receive, send)
 
 
 def _declared_length(scope: Scope) -> int | None:

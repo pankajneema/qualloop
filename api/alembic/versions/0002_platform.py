@@ -143,6 +143,12 @@ def upgrade() -> None:
     )
     enable_tenant_rls("users")
     add_updated_at_trigger("users")
+    # Column-level UPDATE only (security review of P01): email, tenant_id, id and creation audit columns are immutable.
+    op.execute(f"REVOKE UPDATE ON users FROM {APP}")
+    op.execute(
+        "GRANT UPDATE (name, mobile, role, can_approve, plant_ids, active, password_hash, updated_at, updated_by) "
+        f"ON users TO {APP}"
+    )
     op.execute(
         """
         CREATE FUNCTION trg_users_plant_ids_valid() RETURNS trigger LANGUAGE plpgsql AS

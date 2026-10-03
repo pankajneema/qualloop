@@ -18,14 +18,15 @@ export QL_REDIS_PASSWORD := $(REDIS_PASSWORD)
 CORE_COV_MIN ?= 90
 
 # Tests/migrations run on the host against the compose Postgres/Redis (real services, no SQLite).
-TEST_ENV := QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
+TEST_ENV := QL_ENV=local QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
             QL_TEST_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test \
             QL_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
-            QL_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test \
             QL_REDIS_URL=redis://qualloop_app:$(REDIS_PASSWORD)@localhost:$(REDIS_PORT)/0 \
             QL_S3_ENDPOINT_URL=http://localhost:8333 \
             QL_SMTP_HOST=localhost QL_SMTP_PORT=1025 \
             QL_CLAMAV_HOST=localhost QL_CLAMAV_PORT=3310
+# Owner credential: migrations only (never in TEST_ENV; tests/conftest.py sets it for alembic from the TEST_* URL).
+MIGRATE_ENV := QL_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test
 # Note: tests switch to Redis database 15 themselves (tests/conftest.py), so the URL above stays on db 0.
 
 .PHONY: help up down deps migrate seed test test-api coverage-core test-web lint lint-api lint-web fmt e2e \
@@ -33,6 +34,9 @@ TEST_ENV := QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@
 
 help:
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ -/' | sort
+	@echo ""
+	@echo "Overrides: QL_PG_HOST_PORT=55432 (Postgres host port) and QL_REDIS_HOST_PORT drive BOTH compose and the test URLs,"
+	@echo "  e.g. QL_PG_HOST_PORT=55432 make up && QL_PG_HOST_PORT=55432 make test-api (default 5432 / 6379)." 
 
 up: ## start postgres, redis (ACL), s3 (SeaweedFS), mailpit, clamav, migrate, api, worker, dispatcher, scheduler, web (waits until healthy)
 	$(COMPOSE) up -d --build --wait
@@ -79,9 +83,9 @@ e2e: ## Playwright smoke against the running stack (make up first)
 	cd web && $(PNPM) playwright test
 
 migrations-roundtrip: deps ## alembic upgrade -> downgrade base -> upgrade on the test database
-	cd api && $(TEST_ENV) uv run alembic upgrade head \
-	  && $(TEST_ENV) uv run alembic downgrade base \
-	  && $(TEST_ENV) uv run alembic upgrade head
+	cd api && $(TEST_ENV) $(MIGRATE_ENV) uv run alembic upgrade head \
+	  && $(TEST_ENV) $(MIGRATE_ENV) uv run alembic downgrade base \
+	  && $(TEST_ENV) $(MIGRATE_ENV) uv run alembic upgrade head
 
 build: ## build production images (no push)
 	docker build --target runtime -t qualloop-api:local api

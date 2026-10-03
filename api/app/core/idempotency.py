@@ -109,8 +109,8 @@ def reserve(
         if existing.expires_at > now:
             if existing.request_hash != request_hash_:
                 raise IdempotencyMismatch("This Idempotency-Key was used for a different request.")
-            if existing.response_status is None or existing.response_body is None:
-                raise Conflict("The first request with this Idempotency-Key did not finish.")
+            # The reservation and the response commit together, so a visible row always carries its response.
+            assert existing.response_status is not None and existing.response_body is not None
             return Replay(int(existing.response_status), dict(existing.response_body))
         session.execute(delete(idempotency_keys).where(idempotency_keys.c.id == existing.id))
 

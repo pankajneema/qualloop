@@ -24,9 +24,9 @@ from dramatiq.middleware import (
 )
 
 from app.core.config import get_settings
-from app.core.jobs.middleware import DeadLetter, Prometheus, TenantContext
+from app.core.jobs.middleware import DeadLetter, Prometheus, TenantContext, TracebackMask
 
-# Blueprint 22.2: "dead-letter after 5 attempts". dramatiq counts RETRIES: max_retries=N means N + 1 executions, so
+# SPEC-GAP: A-100 - blueprint 22.2: "dead-letter after 5 attempts". dramatiq counts RETRIES: max_retries=N means N + 1 executions, so
 # max_retries=4 gives exactly 5 executions in total (ADR-006 says max_retries=5, which would be 6 attempts).
 MAX_ATTEMPTS = 5
 MAX_RETRIES = MAX_ATTEMPTS - 1
@@ -47,7 +47,9 @@ class JobRef:
 class JobSpec:
     ref: JobRef
     fn: Callable[..., Any]
-    options: dict[str, Any] = field(default_factory=dict)
+    options: dict[str, Any] = field(
+        default_factory=dict
+    )  # dramatiq actor options (and `own_transaction`)
 
     @property
     def name(self) -> str:
@@ -60,7 +62,11 @@ _lock = threading.Lock()
 
 
 def job(ref: JobRef, **options: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Record a job. The decorated function is returned unchanged, so it stays directly callable in tests."""
+    """Record a job. The decorated function is returned unchanged, so it stays directly callable in tests.
+
+    By default the body runs inside one `tenant_tx`. A job that talks to the outside world (mail, HTTP, Redis state) must
+    not hold a database transaction open meanwhile: it passes `own_transaction=True`, is then called with the tenant
+    context bound but NO open transaction, and opens short `tenant_tx` blocks itself around its database work."""
 
     def register(fn: Callable[..., Any]) -> Callable[..., Any]:
         if ref.name in _JOBS and _JOBS[ref.name].fn is not fn:
@@ -75,9 +81,28 @@ def registered_jobs() -> dict[str, JobSpec]:
     return dict(_JOBS)
 
 
+class StableIdRedisBroker(RedisBroker):
+    """A Redis broker whose FIRST enqueue of a message uses `message.message_id` as the Redis message id.
+
+    Stock dramatiq invents a random Redis id per enqueue, so the same logical message sent twice is two independent
+    entries. The outbox dispatcher gives every (event, handler) a stable `message_id` (`{event_id}:{actor}`); with a stable
+    Redis id a redelivered event shares one stored body (an extra queue entry whose body was already acked is skipped by the
+    consumer), and the id on the queue can be traced back to the event. Consumers still dedupe on `event_id`. Re-enqueues (retries carry `redis_message_id` already) and delayed sends keep dramatiq's
+    behaviour: a retry must NOT share the id of the message still being processed."""
+
+    def enqueue(self, message: Message[Any], *, delay: int | None = None) -> Message[Any]:
+        if delay is not None or "redis_message_id" in message.options:
+            return super().enqueue(message, delay=delay)
+        message = message.copy(options={"redis_message_id": message.message_id})
+        self.emit_before("enqueue", message, delay)
+        self.do_enqueue(message.queue_name, message.options["redis_message_id"], message.encode())
+        self.emit_after("enqueue", message, delay)
+        return message
+
+
 def build_broker(redis_url: str) -> Broker:
     """A Redis broker with the platform middleware. Does not become the global broker."""
-    return RedisBroker(  # type: ignore[no-untyped-call]
+    return StableIdRedisBroker(  # type: ignore[no-untyped-call]
         url=redis_url,
         middleware=[
             Prometheus(),
@@ -87,6 +112,7 @@ def build_broker(redis_url: str) -> Broker:
             Callbacks(),
             Pipelines(),
             TenantContext(),
+            TracebackMask(),  # before Retries: after-hooks run in reverse, so it sees the traceback Retries sets
             Retries(
                 max_retries=MAX_RETRIES, min_backoff=MIN_BACKOFF_MS, max_backoff=MAX_BACKOFF_MS
             ),

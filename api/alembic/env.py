@@ -1,5 +1,6 @@
 """Alembic environment. Runs as qualloop_owner (QL_DATABASE_URL_OWNER); tests may override sqlalchemy.url."""
 
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -7,7 +8,6 @@ from pathlib import Path
 from sqlalchemy import create_engine, pool
 
 from alembic import context
-from app.core.config import get_settings
 
 # Revisions share `helpers.py` (RLS, STD columns, per-tenant data steps); make it importable from the CLI too.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -22,7 +22,12 @@ target_metadata = None
 def _url() -> str:
     # str.replace guards against '%' interpolation in ConfigParser values
     override = config.get_main_option("sqlalchemy.url")
-    return override.replace("%%", "%") if override else get_settings().database_url_owner
+    if override:
+        return override.replace("%%", "%")
+    url = os.environ.get("QL_DATABASE_URL_OWNER")
+    if not url:
+        raise RuntimeError("QL_DATABASE_URL_OWNER is not set: migrations run as the owner role")
+    return url
 
 
 def run_migrations_offline() -> None:

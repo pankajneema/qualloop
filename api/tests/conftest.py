@@ -5,6 +5,8 @@ QL_REDIS_URL points at Redis. Defaults target localhost:5432 / 6379.
 """
 
 import os
+import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from pathlib import Path
@@ -22,7 +24,7 @@ from app.core.db import get_engine
 from tests.factories import db as dbf
 from tests.factories import mail as mailf
 from tests.factories.api import ApiFactory
-from tests.factories.env import with_redis_db
+from tests.factories.env import owner_url, with_redis_db
 
 API_ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,15 +40,51 @@ REDIS_KEY_PATTERNS = (
 )
 
 
+# Fixed advisory-lock key ("QLTE") that serialises whole pytest runs against the shared qualloop_test database and
+# Redis db 15: two concurrent runs would otherwise delete each other's rows/keys and drain each other's queues.
+RUN_LOCK_KEY = 0x514C5445
+RUN_LOCK_WAIT_SECONDS = 20 * 60
+
+
+@pytest.fixture(scope="session")
+def _exclusive_run() -> Iterator[None]:
+    """Hold a session-level `pg_advisory_lock` (owner role, dedicated connection) for the whole run.
+
+    A second run waits here (polling `pg_try_advisory_lock`) instead of interfering. If Postgres is not reachable
+    there is nothing shared to protect (unit-only runs), so the run proceeds without the lock."""
+    import psycopg
+
+    url = owner_url().replace("postgresql+psycopg://", "postgresql://", 1)
+    try:
+        conn = psycopg.connect(url, autocommit=True, connect_timeout=5)
+    except psycopg.OperationalError:
+        yield
+        return
+    try:
+        deadline = time.monotonic() + RUN_LOCK_WAIT_SECONDS
+        while not conn.execute("SELECT pg_try_advisory_lock(%s)", (RUN_LOCK_KEY,)).fetchone()[0]:  # type: ignore[index]
+            if time.monotonic() > deadline:
+                pytest.exit(
+                    "another pytest run held the shared test database lock for 20 minutes", 3
+                )
+            time.sleep(1.0)
+        yield
+        conn.execute("SELECT pg_advisory_unlock(%s)", (RUN_LOCK_KEY,))
+    finally:
+        conn.close()
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _test_env() -> Iterator[None]:
+def _test_env(_exclusive_run: None) -> Iterator[None]:
     """Point every in-process component (app, worker, dispatcher) at the TEST database and Redis db 15.
 
     Without this a bare `pytest` would run the app against the dev database (RLS data leaks between dev and
     tests) and the in-process Dramatiq worker would race the dev stack's worker on Redis db 0."""
     base = Settings()
     os.environ["QL_DATABASE_URL"] = base.test_database_url
-    os.environ["QL_DATABASE_URL_OWNER"] = base.test_database_url_owner
+    os.environ["QL_DATABASE_URL_OWNER"] = (
+        owner_url()
+    )  # read by alembic/env.py only, never by the runtime
     os.environ["QL_REDIS_URL"] = with_redis_db(base.redis_url)
     for name, default in (
         ("QL_SMTP_HOST", "localhost"),
@@ -80,7 +118,7 @@ def alembic_config(owner_url: str) -> Config:
 @pytest.fixture(scope="session")
 def migrated_db(settings: Settings) -> Iterator[None]:
     """Test database at alembic head."""
-    command.upgrade(alembic_config(settings.test_database_url_owner), "head")
+    command.upgrade(alembic_config(owner_url()), "head")
     yield
 
 
@@ -109,7 +147,7 @@ def _role_guard(expected: str) -> Callable[[Any, Any], None]:
 
 @pytest.fixture(scope="session")
 def owner_engine(settings: Settings, migrated_db: None) -> Iterator[Engine]:
-    engine = create_engine(settings.test_database_url_owner, isolation_level="AUTOCOMMIT")
+    engine = create_engine(owner_url(), isolation_level="AUTOCOMMIT")
     event.listen(engine, "connect", _role_guard("qualloop_owner"))
     yield engine
     engine.dispose()
@@ -208,3 +246,53 @@ def clean_outbox(app_engine: Engine, engine_env: None) -> None:
 def assert_current_user(engine: Engine, expected: str = "qualloop_app") -> None:
     with engine.connect() as conn:
         assert conn.execute(text("SELECT current_user")).scalar_one() == expected
+
+
+# --------------------------------------------------------------------------------------------------
+# Background threads: in-process Dramatiq workers must never outlive their test (a leaked non-daemon thread keeps
+# the pytest process alive after the run, and a leaked consumer keeps taking jobs from the shared Redis db 15).
+# --------------------------------------------------------------------------------------------------
+_STARTED_WORKERS: list[Any] = []
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _track_dramatiq_workers() -> Iterator[None]:
+    """Record every `dramatiq.Worker` started in this process so a finaliser can stop the ones a test left running."""
+    import dramatiq
+
+    original_start, original_stop = dramatiq.Worker.start, dramatiq.Worker.stop
+
+    def start(self: Any) -> None:
+        _STARTED_WORKERS.append(self)
+        original_start(self)
+
+    def stop(self: Any, *args: Any, **kwargs: Any) -> None:
+        if self in _STARTED_WORKERS:
+            _STARTED_WORKERS.remove(self)
+        original_stop(self, *args, **kwargs)
+
+    dramatiq.Worker.start = start  # type: ignore[method-assign]
+    dramatiq.Worker.stop = stop  # type: ignore[method-assign]
+    yield
+    _stop_started_workers()
+    dramatiq.Worker.start, dramatiq.Worker.stop = original_start, original_stop  # type: ignore[method-assign]
+
+
+def _stop_started_workers() -> None:
+    for worker in list(_STARTED_WORKERS):  # `stop` removes the worker from the list
+        try:
+            worker.stop()
+        except Exception:  # best effort: shutdown must not fail an unrelated test
+            _STARTED_WORKERS.clear()
+
+
+@pytest.fixture(autouse=True)
+def _stop_leaked_threads() -> Iterator[None]:
+    """After every test: stop any Dramatiq worker it started and left running, and wait briefly for helper
+    threads (dispatcher loop, scheduler) that the test forgot to join, so none keeps running into the next test."""
+    before = set(threading.enumerate())
+    yield
+    _stop_started_workers()
+    for thread in set(threading.enumerate()) - before:
+        if thread.is_alive() and not thread.daemon and thread is not threading.current_thread():
+            thread.join(timeout=5)

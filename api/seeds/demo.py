@@ -4,6 +4,7 @@ Local development only: the script refuses to run in any other `QL_ENV`, because
 Idempotent: if the demo admin already exists nothing is created. Grows each phase towards blueprint 24.1.6 (P09).
 """
 
+import os
 import sys
 from uuid import UUID
 
@@ -11,7 +12,6 @@ from sqlalchemy import text
 
 from app.core.audit.writer import record_activity
 from app.core.auth.passwords import hash_password
-from app.core.config import get_settings
 from app.core.db import get_engine, tenant_tx
 from app.core.ids import new_id
 from app.core.models import Plant, Tenant, User
@@ -92,10 +92,12 @@ def seed() -> UUID | None:
 
 
 def main() -> None:
-    settings = get_settings()
-    if settings.env != "local":
+    # Read the raw variable first: outside local, loading Settings may itself fail on missing production secrets, and the
+    # refusal must be the answer then, not a validation traceback.
+    env = os.environ.get("QL_ENV")
+    if env != "local":
         print(
-            f"refusing to seed demo data: QL_ENV is {settings.env!r}, demo users have public passwords "
+            f"refusing to seed demo data: QL_ENV is {env!r}, demo users have public passwords "
             "and are only allowed when QL_ENV is 'local'",
             file=sys.stderr,
         )

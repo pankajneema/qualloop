@@ -4,6 +4,13 @@ One cycle = one transaction: claim up to `limit` pending events with `app_claim_
 oldest first, skipping events still inside their backoff), hand each to `enqueue`, then mark it processed or count the
 failure under that event's tenant. Two dispatchers can run side by side: SKIP LOCKED gives each event to exactly one.
 
+Delivery is AT LEAST ONCE: the job message is sent before the row is marked processed, so a crash (or a failed
+commit) in between sends the event again. The message id is `{event_id}:{actor}`, but Dramatiq does not deduplicate on
+it, so every consumer must dedupe on `event_id`.
+
+Each claimed row runs inside a SAVEPOINT: a database error on one row's bookkeeping rolls back that row only and the
+rest of the batch still commits.
+
 Backoff after failure n is `5 s x 2^n`; the 5th failure makes the event a dead letter (stays unprocessed with
 attempts = 5, never claimed again) and raises an alert (log line `outbox_event_dead_lettered`, counter).
 """
@@ -17,9 +24,11 @@ from uuid import UUID
 import structlog
 from dramatiq import Message
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.db import set_tenant, system_tx
 from app.core.jobs import get_broker
+from app.core.logging import mask_text
 from app.core.outbox import registry
 
 log = structlog.get_logger("outbox")
@@ -84,11 +93,11 @@ def default_enqueue(event: ClaimedEvent) -> None:
         return
     broker = get_broker()
     for handler in spec.handlers:
-        actor = broker.get_actor(handler)
+        # Built from the registered name and queue: the dispatcher process never declares the actors (as `enqueue` does).
         broker.enqueue(
             Message(
-                queue_name=actor.queue_name,
-                actor_name=handler,
+                queue_name=handler.queue,
+                actor_name=handler.actor_name,
                 args=(),
                 kwargs={
                     "tenant_id": str(event.tenant_id),
@@ -99,15 +108,57 @@ def default_enqueue(event: ClaimedEvent) -> None:
                     "payload": event.payload,
                 },
                 options={},
-                message_id=message_id_for(event.event_id, handler),
+                message_id=message_id_for(event.event_id, handler.actor_name),
             )
         )
 
 
 def _safe_error(exc: BaseException) -> str:
     """Error text for `last_error`: no NUL bytes (Postgres text cannot hold them), at most 4 kB of UTF-8."""
-    raw = f"{type(exc).__name__}: {exc}".replace("\x00", "")
+    raw = mask_text(f"{type(exc).__name__}: {exc}").replace("\x00", "")
     return raw.encode("utf-8")[:MAX_ERROR_BYTES].decode("utf-8", "ignore")
+
+
+def _settle(session: Session, event: ClaimedEvent, send: Callable[[ClaimedEvent], None]) -> bool:
+    """Hand one event to `send`, then record the outcome under the event's tenant. True = processed."""
+    error: str | None = None
+    try:
+        send(event)
+    except Exception as exc:
+        error = _safe_error(exc)
+    # Each update runs under the event's own tenant (the claim ran with none); set inside the savepoint.
+    set_tenant(session, event.tenant_id)
+    if error is None:
+        session.execute(
+            text("UPDATE outbox_events SET processed_at = now() WHERE tenant_id = :t AND id = :id"),
+            {"t": event.tenant_id, "id": event.id},
+        )
+        _count("dispatched", "Outbox events handed to the job queue.")
+        return True
+    attempts = session.execute(
+        text(
+            "UPDATE outbox_events SET attempts = attempts + 1, last_error = :error "
+            "WHERE tenant_id = :t AND id = :id RETURNING attempts"
+        ),
+        {"t": event.tenant_id, "id": event.id, "error": error},
+    ).scalar_one()
+    _count("failed", "Outbox dispatch attempts that failed.")
+    log.warning(
+        "outbox_dispatch_failed",
+        event_id=str(event.event_id),
+        tenant_id=str(event.tenant_id),
+        attempts=attempts,
+    )
+    if attempts >= MAX_ATTEMPTS:
+        _count("dead_lettered", "Outbox events that reached 5 failed attempts.")
+        log.error(
+            "outbox_event_dead_lettered",
+            event_id=str(event.event_id),
+            tenant_id=str(event.tenant_id),
+            event_type=event.event_type,
+            attempts=attempts,
+        )
+    return False
 
 
 def dispatch_once(
@@ -134,45 +185,22 @@ def dispatch_once(
                 payload=dict(row.payload),
                 attempts=row.attempts,
             )
-            error: str | None = None
             try:
-                send(event)
-            except Exception as exc:
-                error = _safe_error(exc)
-            # Each update runs under the event's own tenant (the claim ran with none).
-            set_tenant(session, event.tenant_id)
-            if error is None:
-                session.execute(
-                    text(
-                        "UPDATE outbox_events SET processed_at = now() WHERE tenant_id = :t AND id = :id"
-                    ),
-                    {"t": event.tenant_id, "id": event.id},
-                )
-                processed += 1
-                _count("dispatched", "Outbox events handed to the job queue.")
-                continue
-            attempts = session.execute(
-                text(
-                    "UPDATE outbox_events SET attempts = attempts + 1, last_error = :error "
-                    "WHERE tenant_id = :t AND id = :id RETURNING attempts"
-                ),
-                {"t": event.tenant_id, "id": event.id, "error": error},
-            ).scalar_one()
-            failed += 1
-            _count("failed", "Outbox dispatch attempts that failed.")
-            log.warning(
-                "outbox_dispatch_failed",
-                event_id=str(event.event_id),
-                tenant_id=str(event.tenant_id),
-                attempts=attempts,
-            )
-            if attempts >= MAX_ATTEMPTS:
-                _count("dead_lettered", "Outbox events that reached 5 failed attempts.")
+                with (
+                    session.begin_nested()
+                ):  # SAVEPOINT: one row's database error leaves the others alone
+                    ok = _settle(session, event, send)
+            except Exception:
                 log.error(
-                    "outbox_event_dead_lettered",
+                    "outbox_row_bookkeeping_failed",
                     event_id=str(event.event_id),
                     tenant_id=str(event.tenant_id),
-                    event_type=event.event_type,
-                    attempts=attempts,
+                    exc_info=True,
                 )
+                failed += 1
+                continue
+            if ok:
+                processed += 1
+            else:
+                failed += 1
     return DispatchResult(processed=processed, failed=failed)

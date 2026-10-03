@@ -5,9 +5,10 @@ name: qualloop
 
 x-api-env: &api-env
   QL_ENV: local
+  # Compose network (fixed subnet below): the web container proxying /api/v1 is the trusted hop (A-106).
+  QL_TRUSTED_PROXIES: 172.29.0.0/24
   QL_LOG_LEVEL: ${QL_LOG_LEVEL:-INFO}
   QL_DATABASE_URL: postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop
-  QL_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop
   QL_REDIS_URL: redis://qualloop_app:${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}@redis:6379/0
   QL_PUBLIC_BASE_URL: http://localhost:3000
   QL_S3_ENDPOINT_URL: http://s3:8333
@@ -123,7 +124,10 @@ services:
       context: ../api
       target: dev
     command: ["alembic", "upgrade", "head"]
-    environment: *api-env
+    environment:
+      <<: *api-env
+      # The owner credential (can alter RLS) exists only in this one-shot migration service.
+      QL_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop
     depends_on:
       postgres:
         condition: service_healthy
@@ -210,6 +214,12 @@ services:
       timeout: 5s
       retries: 40
       start_period: 20s
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
 
 volumes:
   pgdata:

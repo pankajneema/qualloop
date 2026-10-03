@@ -24,6 +24,7 @@ STATUS_AVAILABLE = "available"
 STATUS_QUARANTINED = "quarantined"
 REASON_INFECTED = "infected"
 REASON_MISMATCH = "content_type_mismatch"
+REASON_TOO_LARGE = "too_large"
 
 _CHUNK = 64 * 1024
 _CONNECT_TIMEOUT = 5.0
@@ -44,7 +45,7 @@ class ScanVerdict:
 @dataclass(frozen=True)
 class ScanResult:
     status: str  # `available` or `quarantined`
-    reason: str | None = None  # `infected` or `content_type_mismatch` when quarantined
+    reason: str | None = None  # `infected`, `content_type_mismatch` or `too_large` when quarantined
     sha256: str | None = None  # lowercase hex, only when available
 
 
@@ -89,6 +90,11 @@ def scan_quarantined(tenant_id: UUID, key: str) -> ScanResult:
         if not _is_missing(exc):
             raise
         return _already_promoted(s3, key)
+    # SPEC-GAP: A-97 - a presigned PUT is bounded by what the client declares, not by what it sends: check the real size
+    # from the metadata before downloading anything. Final verdict (no raise, so no retry); the object stays in quarantine.
+    if int(head.get("ContentLength", 0)) > storage.MAX_UPLOAD_BYTES:
+        log.warning("upload_quarantined", reason=REASON_TOO_LARGE, tenant_id=str(tenant_id))
+        return ScanResult(STATUS_QUARANTINED, REASON_TOO_LARGE)
     declared = str(head.get("ContentType", ""))
     data: bytes = s3.get_object(Bucket=storage.bucket_quarantine(), Key=key)["Body"].read()
 

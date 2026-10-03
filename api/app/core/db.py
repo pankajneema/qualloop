@@ -30,6 +30,7 @@ def get_engine() -> Engine:
     return create_engine(
         get_settings().database_url,
         pool_pre_ping=True,
+        hide_parameters=True,  # bound values (emails, mobiles) never appear in exception text or logs
         pool_size=5,
         isolation_level="READ COMMITTED",  # ADR-003 M1: lock first, then sum in a separate statement
     )

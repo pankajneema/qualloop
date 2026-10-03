@@ -10,6 +10,7 @@ user default off nopass resetkeys -@all
 #   - dramatiq:*  Dramatiq broker keys (queues, .DQ delay queues, .XQ dead letters, acks, heartbeats)
 #   - ~dramatiq (exact key, beyond ADR-008): Dramatiq's Lua dispatch script is called with KEYS[1] = the bare namespace
 #     "dramatiq" and the ACL key-checks declared keys; without it every enqueue fails with NOPERM. It holds no data.
-#   - scripting (EVALSHA/SCRIPT LOAD) stays allowed because Dramatiq's broker runs Lua; scripts are still
+#   - FUNCTION (all subcommands), SCRIPT FLUSH and SCRIPT KILL are denied: they affect every client of the instance.
+#   - scripting (EVAL/EVALSHA/SCRIPT LOAD/EXISTS) stays allowed because Dramatiq's broker runs Lua; scripts are still
 #     key-checked by the ACL, so a script cannot touch keys outside the patterns above.
-user qualloop_app on #@APP_HASH@ resetkeys ~sess:* ~user_sessions:* ~otp:* ~rl:* ~idem:* ~sched:* ~dramatiq:* ~dramatiq resetchannels +@all -@admin -@dangerous -flushall -flushdb -keys -config
+user qualloop_app on #@APP_HASH@ resetkeys ~sess:* ~user_sessions:* ~otp:* ~rl:* ~idem:* ~sched:* ~dramatiq:* ~dramatiq resetchannels +@all -@admin -@dangerous -flushall -flushdb -keys -config -function -script|flush -script|kill

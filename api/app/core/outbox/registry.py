@@ -2,7 +2,7 @@
 
 `derived=False` events are named in blueprint 22.3; `derived=True` names are ours (A-94), one per command that the
 blueprint says must "emit an outbox event" (section 7). `emitters` lists the commands/jobs that write the event (empty
-until the phase that builds the emitter); `handlers` lists Dramatiq actor names the dispatcher fans the event out to.
+until the phase that builds the emitter); `handlers` lists Dramatiq actors (name and queue) the dispatcher fans the event out to.
 """
 
 from collections.abc import Iterable
@@ -10,11 +10,20 @@ from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
+class Handler:
+    """A Dramatiq actor an event is fanned out to: its name and queue, so a process that never declared the actor
+    (the dispatcher) can still build the message."""
+
+    actor_name: str
+    queue: str
+
+
+@dataclass(frozen=True)
 class EventSpec:
     name: str
     derived: bool
     emitters: tuple[str, ...] = ()
-    handlers: tuple[str, ...] = ()
+    handlers: tuple[Handler, ...] = ()
 
 
 _EVENTS: dict[str, EventSpec] = {}
@@ -41,11 +50,13 @@ def add_emitter(event_type: str, emitter: str) -> None:
         _EVENTS[event_type] = replace(spec, emitters=(*spec.emitters, emitter))
 
 
-def add_handler(event_type: str, actor_name: str) -> None:
+def add_handler(event_type: str, actor_name: str, *, queue: str) -> None:
     """Subscribe a Dramatiq actor to an event type (called at import time by the module that owns the handler)."""
     spec = _EVENTS[event_type]
-    if actor_name not in spec.handlers:
-        _EVENTS[event_type] = replace(spec, handlers=(*spec.handlers, actor_name))
+    if all(h.actor_name != actor_name for h in spec.handlers):
+        _EVENTS[event_type] = replace(
+            spec, handlers=(*spec.handlers, Handler(actor_name=actor_name, queue=queue))
+        )
 
 
 def _register_all(names: Iterable[str], *, derived: bool) -> None:

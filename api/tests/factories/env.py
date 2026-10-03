@@ -17,6 +17,16 @@ MAX_UPLOAD_BYTES_CLEARLY_OK = 19_999_999
 MAX_UPLOAD_BYTES_CLEARLY_OVER = 20 * 1024 * 1024 + 1
 
 
+def owner_url() -> str:
+    """Migration/owner role URL for the TEST database, read straight from the environment.
+
+    The runtime `Settings` holds no owner credential (P01 contract, item 8), so tests never take it from there."""
+    return os.environ.get(
+        "QL_TEST_DATABASE_URL_OWNER",
+        "postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:5432/qualloop_test",
+    )
+
+
 def with_redis_db(url: str, db: int = TEST_REDIS_DB) -> str:
     parts = urlsplit(url)
     return urlunsplit((parts.scheme, parts.netloc, f"/{db}", parts.query, parts.fragment))

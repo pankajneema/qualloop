@@ -2,7 +2,8 @@
 
 * `TenantContext`  every message must carry `tenant_id` (a UUID string) as a keyword argument; messages without a valid
   one are refused at enqueue time and, if one still arrives, failed without running the actor. The actor body runs inside
-  `tenant_tx(tenant_id, "system")`, reached through `current_session()`.
+  `tenant_tx(tenant_id, "system")`, reached through `current_session()`; a job declared with `own_transaction=True`
+  runs with the tenant context bound but no open transaction and opens short ones itself (no I/O inside a transaction).
 * `DeadLetter`     when a message is rejected after its retries are exhausted, one `job_dead_letters` row is written under
   the job's tenant and an alert log line (`job_dead_lettered`) is emitted.
 """
@@ -24,7 +25,7 @@ from sqlalchemy import text
 
 from app.core.db import tenant_tx
 from app.core.ids import new_id
-from app.core.logging import bind_actor_context, clear_request_context
+from app.core.logging import bind_actor_context, clear_request_context, mask_text
 
 log = structlog.get_logger("jobs")
 
@@ -46,6 +47,10 @@ def parse_tenant(value: Any) -> UUID | None:
 
 class TenantContext(Middleware):
     """Per-job tenant isolation (INV-PLT-03)."""
+
+    @property
+    def actor_options(self) -> set[str]:
+        return {"own_transaction"}
 
     def __init__(self) -> None:
         self._wrapped: set[int] = set()
@@ -72,10 +77,14 @@ class TenantContext(Middleware):
             if id(actor) in self._wrapped:
                 return
             self._wrapped.add(id(actor))
-        actor.fn = _in_tenant_tx(actor.fn, actor.actor_name)
+        actor.fn = _in_tenant_tx(
+            actor.fn, actor.actor_name, own_transaction=bool(actor.options.get("own_transaction"))
+        )
 
 
-def _in_tenant_tx(fn: Callable[..., Any], actor_name: str) -> Callable[..., Any]:
+def _in_tenant_tx(
+    fn: Callable[..., Any], actor_name: str, *, own_transaction: bool = False
+) -> Callable[..., Any]:
     @functools.wraps(fn)
     def run(*args: Any, **kwargs: Any) -> Any:
         tenant_id = parse_tenant(kwargs.get("tenant_id"))
@@ -84,12 +93,64 @@ def _in_tenant_tx(fn: Callable[..., Any], actor_name: str) -> Callable[..., Any]
         bind_actor_context(tenant_id=str(tenant_id), actor_type="system", user_id=None)
         structlog.contextvars.bind_contextvars(job=actor_name)
         try:
+            if (
+                own_transaction
+            ):  # the job opens its own short transactions (no I/O inside a transaction)
+                return fn(*args, **kwargs)
             with tenant_tx(tenant_id, actor_type="system"):
                 return fn(*args, **kwargs)
         finally:
             clear_request_context()
 
     return run
+
+
+_dead_lettered: Any = None
+_dead_lettered_lock = threading.Lock()
+
+
+def _dead_lettered_counter() -> Any:
+    """`qualloop_jobs_dead_lettered_total{queue,actor}`, created on first use.
+
+    `prometheus_client` is imported lazily on purpose (see `Prometheus` below and the outbox dispatcher): dramatiq must set
+    its multiprocess directory before the library is first imported in a worker process."""
+    global _dead_lettered
+    from prometheus_client import Counter
+
+    with _dead_lettered_lock:
+        if _dead_lettered is None:
+            _dead_lettered = Counter(
+                "qualloop_jobs_dead_lettered",
+                "Jobs that exhausted their attempts and were dead-lettered.",
+                ["queue", "actor"],
+            )
+        return _dead_lettered
+
+
+class TracebackMask(Middleware):
+    """Dramatiq's `Retries` stores `options["traceback"]` on a failed message, and that message is kept in Redis (retry
+    queue, dead-letter queue). Exception text can hold an email or mobile number (for example a database DETAIL line), so
+    the traceback is masked like every log value. Listed BEFORE `Retries`: `after_*` hooks run in reverse order, so this
+    one sees the traceback after `Retries` set it and before the message is nacked or re-enqueued."""
+
+    @staticmethod
+    def _mask(message: Any) -> None:
+        trace = message.options.get("traceback")
+        if isinstance(trace, str):
+            message.options["traceback"] = mask_text(trace)
+
+    def before_enqueue(self, broker: Broker, message: Message[Any], delay: int | None) -> None:
+        self._mask(message)
+
+    def after_process_message(
+        self,
+        broker: Broker,
+        message: MessageProxy,
+        *,
+        result: Any = None,
+        exception: BaseException | None = None,
+    ) -> None:
+        self._mask(message)
 
 
 class DeadLetter(Middleware):
@@ -115,10 +176,11 @@ class DeadLetter(Middleware):
                 return
             if len(self._errors) >= self._MAX_PENDING_ERRORS:
                 self._errors.clear()
-            # Exception text only: tracebacks stay out of the database (they may carry data).
-            self._errors[message.message_id] = f"{type(exception).__name__}: {exception}"[
-                :MAX_ERROR_CHARS
-            ]
+            # Exception text only (tracebacks stay out of the database), with emails and mobiles masked: database
+            # errors repeat the offending value in their DETAIL line.
+            self._errors[message.message_id] = mask_text(
+                f"{type(exception).__name__}: {exception}"
+            )[:MAX_ERROR_CHARS]
 
     def after_ack(self, broker: Broker, message: MessageProxy) -> None:
         with self._lock:
@@ -162,6 +224,7 @@ class DeadLetter(Middleware):
                 tenant_id=str(tenant_id),
                 exc_info=True,
             )
+        _dead_lettered_counter().labels(queue=message.queue_name, actor=message.actor_name).inc()
         log.error(
             "job_dead_lettered",
             message_id=message.message_id,

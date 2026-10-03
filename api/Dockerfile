@@ -15,7 +15,7 @@ RUN uv sync --frozen
 COPY . .
 RUN useradd --system --uid 10001 --no-create-home qualloop
 USER qualloop
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload", "--no-proxy-headers"]
 
 FROM base AS runtime
 # Pick up fixed OS security patches on top of the digest-pinned base (Trivy gate).
@@ -27,9 +27,8 @@ COPY --from=builder /app/.venv /app/.venv
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
-COPY seeds ./seeds
 USER qualloop
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
-CMD ["gunicorn", "app.main:create_app()", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--workers", "2"]
+CMD ["gunicorn", "app.main:create_app()", "-k", "app.uvicorn_worker.AppUvicornWorker", "-b", "0.0.0.0:8000", "--workers", "2"]

@@ -9,6 +9,8 @@ import hashlib
 import hmac
 from uuid import UUID
 
+import redis as redis_lib
+
 from app.core.config import get_settings
 from app.core.redis_client import get_redis
 
@@ -30,29 +32,59 @@ def _key(user_id: UUID) -> str:
     return f"otp:pwreset:{user_id}"
 
 
-def store(user_id: UUID, code: str) -> None:
-    """Replace any earlier code of this user (a new request invalidates the old one)."""
+def store(user_id: UUID, code: str, nonce: str | None = None) -> bool:
+    """Make `code` the user's current code (without a `nonce`: unconditionally), unless a code for a NEWER request is already stored.
+
+    Request nonces are UUIDv7, so they sort in request order (lower-case hyphenated text compares like the number). A job
+    that is redelivered or retried after a newer request was processed must not replace the newer code: it returns False
+    and the caller sends nothing (the SAME nonce may store again: a retry after a failed send regenerates the same
+    code). Compare-and-set under WATCH: a concurrent writer makes the transaction retry."""
     redis = get_redis()
-    pipe = redis.pipeline()
-    pipe.delete(_key(user_id))
-    pipe.hset(
-        _key(user_id), mapping={"mac": _mac("pwreset-verify", str(user_id), code), "attempts": 0}
-    )
-    pipe.expire(_key(user_id), TTL_SECONDS)
-    pipe.execute()
+    key = _key(user_id)
+    with redis.pipeline() as pipe:
+        for _ in range(5):
+            try:
+                pipe.watch(key)  # type: ignore[no-untyped-call]
+                current = pipe.hget(key, "nonce")
+                if nonce is not None and current is not None and str(current) > nonce:
+                    pipe.unwatch()
+                    return False
+                pipe.multi()
+                pipe.delete(key)
+                pipe.hset(
+                    key,
+                    mapping={
+                        "mac": _mac("pwreset-verify", str(user_id), code),
+                        "attempts": 0,
+                        "nonce": nonce or "",
+                    },
+                )
+                pipe.expire(key, TTL_SECONDS)
+                pipe.execute()
+                return True
+            except redis_lib.WatchError:
+                continue
+    raise RuntimeError("could not store the reset code: the key kept changing")
 
 
 def consume(user_id: UUID, code: str) -> bool:
-    """True once for the right code; False for wrong, expired, burnt or already used codes (all look the same)."""
+    """True once for the right code; False for wrong, expired, burnt or already used codes (all look the same).
+
+    The attempt counter, the code and the TTL are handled in ONE MULTI/EXEC: `EXPIRE ... NX` gives any key that
+    `HINCRBY` had to re-create (the code expired between the check and the increment) a TTL, so no `otp:` key can ever
+    exist without one. Such a stray key has no `mac`, so it never verifies."""
     redis = get_redis()
     key = _key(user_id)
     if not redis.exists(key):
         return False
-    attempts = redis.hincrby(key, "attempts", 1)
-    if attempts > MAX_ATTEMPTS:
+    pipe = redis.pipeline()
+    pipe.hincrby(key, "attempts", 1)
+    pipe.hget(key, "mac")
+    pipe.expire(key, TTL_SECONDS, nx=True)
+    attempts, stored, _ = pipe.execute()
+    if int(attempts) > MAX_ATTEMPTS:
         redis.delete(key)
         return False
-    stored = redis.hget(key, "mac")
     if stored is None or not hmac.compare_digest(
         str(stored), _mac("pwreset-verify", str(user_id), code)
     ):

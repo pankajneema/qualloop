@@ -5,7 +5,9 @@ FastAPI solves dependencies before it validates the body, so a caller who may no
 its input rules or about which objects exist.
 """
 
+import ipaddress
 from collections.abc import Awaitable, Callable
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -13,7 +15,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
 from app.core.auth import sessions
-from app.core.config import get_settings
+from app.core.config import get_settings, parse_cidrs
 from app.core.db import read_tx
 from app.core.errors import Forbidden, Unauthenticated
 from app.core.logging import bind_actor_context
@@ -21,13 +23,56 @@ from app.core.models import User
 from app.core.permissions import ACTOR_USER, Actor, Permission, check_permission
 from app.core.redis_client import get_redis
 
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _UNAUTHENTICATED = "Sign in to continue."
 
 
+@lru_cache
+def _trusted_networks(raw: str) -> tuple[IPNetwork, ...]:
+    return parse_cidrs(raw)
+
+
+def _parse_ip(value: str) -> IPAddress | None:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def resolve_client_ip(peer: str | None, forwarded_for: str | None, trusted_raw: str) -> str | None:
+    """SPEC-GAP: A-106. The client address behind trusted proxies.
+
+    `X-Forwarded-For` is believed only when the socket peer is inside `QL_TRUSTED_PROXIES`. Each trusted hop appends the
+    address it saw on the right, so the client is the right-most entry that is not itself a trusted proxy; entries to
+    its left are whatever the caller wrote and are never read. No such entry, or an unparsable one: the peer is used.
+    uvicorn/gunicorn do not rewrite the address (`--no-proxy-headers`), so this is the only place that does.
+    """
+    if not peer:
+        return None
+    trusted = _trusted_networks(trusted_raw)
+    peer_ip = _parse_ip(peer)
+    if not trusted or peer_ip is None or not any(peer_ip in net for net in trusted):
+        return peer
+    if not forwarded_for:
+        return peer
+    for entry in reversed(forwarded_for.split(",")):
+        candidate = _parse_ip(entry)
+        if candidate is None:
+            return peer  # garbage in the chain: do not guess
+        if not any(candidate in net for net in trusted):
+            return str(candidate)
+    return peer
+
+
 def client_ip(request: Request) -> str | None:
-    """The socket peer. Behind the load balancer the platform sets the peer; X-Forwarded-For is not trusted here."""
-    return request.client.host if request.client else None
+    """The client address for rate limits, the session record and `activity_log.ip` (see `resolve_client_ip`)."""
+    peer = request.client.host if request.client else None
+    return resolve_client_ip(
+        peer, request.headers.get("x-forwarded-for"), get_settings().trusted_proxies
+    )
 
 
 def _authenticate(request: Request) -> Actor:

@@ -11,7 +11,7 @@ from uuid import UUID
 import structlog
 from fastapi import Depends, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text
+from sqlalchemy import Row, select, text
 
 from app.core import ratelimit
 from app.core.audit.writer import record_activity
@@ -27,7 +27,7 @@ from app.core.auth.schemas import (
     PasswordResetRequest,
 )
 from app.core.config import get_settings
-from app.core.db import get_engine, tenant_tx
+from app.core.db import get_engine, read_tx, tenant_tx
 from app.core.errors import Forbidden, RateLimited, Unauthenticated, ValidationFailed, field_error
 from app.core.ids import new_id
 from app.core.jobs import enqueue
@@ -45,6 +45,9 @@ LOGIN_FAILURE_LIMIT = 5  # per email and per IP (API.md section 6)
 LOGIN_WINDOW_SECONDS = 15 * 60
 RESET_REQUEST_LIMIT = 3  # per email
 RESET_WINDOW_SECONDS = 3600
+RESET_IP_LIMIT = 20  # per IP per hour, for the request and for the confirm endpoint (A-105)
+RESET_ACCOUNT_FAILURE_CAP = 10  # failed confirms per account per 24 h (A-105)
+DAY_SECONDS = 24 * 3600
 
 _BAD_CREDENTIALS = "The email or password is not correct."
 _BAD_CODE = "That code is not valid or has expired. Ask for a new one."
@@ -112,70 +115,76 @@ def _clear_session_cookies(response: Response) -> None:
 def login(body: LoginRequest, request: Request) -> JSONResponse:
     _check_origin(request)
     email = _normalise(body.email)
-    ip = client_ip(request) or "unknown"
-    counters = [f"rl:login:email:{ratelimit.key_part(email)}", f"rl:login:ip:{ip}"]
-    wait = ratelimit.blocked_for(counters, limit=LOGIN_FAILURE_LIMIT)
+    ip = client_ip(request)
+    counters = [
+        f"rl:login:email:{ratelimit.key_part(email)}",
+        f"rl:login:ip:{ratelimit.key_part(ip or 'unknown')}",
+    ]
+    # The attempt is counted BEFORE the (slow) password check, atomically, so concurrent wrong guesses cannot all slip
+    # under the limit. A successful login gives the slot back below: only failures use up the budget.
+    wait = ratelimit.reserve(
+        counters, limit=LOGIN_FAILURE_LIMIT, window_seconds=LOGIN_WINDOW_SECONDS
+    )
     if wait:
         raise RateLimited(wait, "Too many sign-in attempts. Try again later.")
 
     resolved = _resolve(email)
-    session_token: str | None = None
-    try:
-        if resolved is None:
-            verify_password(None, body.password)  # same cost as a real check
-        else:
-            with tenant_tx(resolved.tenant_id, ACTOR_USER, resolved.user_id) as db:
-                user = db.execute(
-                    select(
-                        User.email,
-                        User.name,
-                        User.role,
-                        User.can_approve,
-                        User.active,
-                        User.password_hash,
-                    ).where(User.tenant_id == resolved.tenant_id, User.id == resolved.user_id)
-                ).first()
-                verified = verify_password(user.password_hash if user else None, body.password)
-                if user is not None and user.active and verified:
-                    session_token, data = sessions.create_session(
-                        get_redis(),
-                        user_id=resolved.user_id,
-                        tenant_id=resolved.tenant_id,
-                        ip=client_ip(request),
-                        user_agent=request.headers.get("user-agent"),
-                    )
-                    record_activity(
-                        db,
-                        actor=Actor(
-                            type=ACTOR_USER,
-                            user_id=resolved.user_id,
-                            tenant_id=resolved.tenant_id,
-                            role=user.role,
-                            can_approve=user.can_approve,
-                            plant_ids=(),
-                            session_id=data.session_id,
-                            ip=client_ip(request),
-                        ),
-                        object_type="user",
-                        object_id=resolved.user_id,
-                        action="auth.login",
-                    )
-                    result = LoginResponse(
-                        email=user.email,
-                        name=user.name,
-                        role=user.role,
-                        can_approve=user.can_approve,
-                    )
-    except BaseException:
-        if session_token is not None:  # the session must not outlive a login that did not commit
-            sessions.delete_session(get_redis(), session_token)
-        raise
-
-    if session_token is None:
+    user: Row[str, str, str, bool, bool, str | None] | None = None
+    if resolved is not None:
+        # Short read transaction: no argon2 and no Redis call while it is open.
+        with read_tx(resolved.tenant_id, ACTOR_USER, resolved.user_id) as db:
+            user = db.execute(
+                select(
+                    User.email,
+                    User.name,
+                    User.role,
+                    User.can_approve,
+                    User.active,
+                    User.password_hash,
+                ).where(User.tenant_id == resolved.tenant_id, User.id == resolved.user_id)
+            ).first()
+    verified = verify_password(
+        user.password_hash if user else None, body.password
+    )  # same cost for every branch
+    if resolved is None or user is None or not user.active or not verified:
         # One generic answer for unknown email, wrong password, inactive user and no password set.
-        ratelimit.record(counters, window_seconds=LOGIN_WINDOW_SECONDS)
         raise Unauthenticated(_BAD_CREDENTIALS)
 
+    redis = get_redis()
+    session_token, data = sessions.create_session(
+        redis,
+        user_id=resolved.user_id,
+        tenant_id=resolved.tenant_id,
+        ip=ip,
+        user_agent=request.headers.get("user-agent"),
+    )
+    try:
+        with tenant_tx(resolved.tenant_id, ACTOR_USER, resolved.user_id) as db:
+            record_activity(
+                db,
+                actor=Actor(
+                    type=ACTOR_USER,
+                    user_id=resolved.user_id,
+                    tenant_id=resolved.tenant_id,
+                    role=user.role,
+                    can_approve=user.can_approve,
+                    plant_ids=(),
+                    session_id=data.session_id,
+                    ip=ip,
+                ),
+                object_type="user",
+                object_id=resolved.user_id,
+                action="auth.login",
+            )
+    except BaseException:
+        sessions.delete_session(
+            redis, session_token, resolved.user_id
+        )  # no session without its audit row
+        raise
+    ratelimit.release(counters, window_seconds=LOGIN_WINDOW_SECONDS)
+    result = LoginResponse(
+        email=user.email, name=user.name, role=user.role, can_approve=user.can_approve
+    )
     response = JSONResponse(result.model_dump())
     _set_session_cookies(response, session_token)
     return response
@@ -198,30 +207,52 @@ def request_password_reset(body: PasswordResetRequest, request: Request) -> Acce
     """Always answers 202, whatever the email is. The worker emails a code only to an active user."""
     _check_origin(request)
     email = _normalise(body.email)
-    ratelimit.hit(
-        f"rl:pwreset:{ratelimit.key_part(email)}",
-        limit=RESET_REQUEST_LIMIT,
-        window_seconds=RESET_WINDOW_SECONDS,
-    )
+    # SPEC-GAP: A-105 - per-IP limit on top of the per-email limit of API.md section 6.
+    _limit(f"rl:pwreset:ip:{ratelimit.key_part(client_ip(request) or 'unknown')}", RESET_IP_LIMIT)
+    _limit(f"rl:pwreset:{ratelimit.key_part(email)}", RESET_REQUEST_LIMIT)
     resolved = _resolve(email)
     if resolved is not None:
-        # The message carries ids and a nonce, never the address or the code (it sits in Redis until a worker takes it).
-        enqueue(
-            SEND_PASSWORD_RESET,
-            tenant_id=str(resolved.tenant_id),
-            user_id=str(resolved.user_id),
-            request_nonce=str(new_id()),
-        )
+        try:
+            # The message carries ids and a nonce, never the address or the code (it sits in Redis until a worker takes it).
+            enqueue(
+                SEND_PASSWORD_RESET,
+                tenant_id=str(resolved.tenant_id),
+                user_id=str(resolved.user_id),
+                request_nonce=str(new_id()),
+            )
+        except Exception:
+            # The answer must not depend on whether the address exists, so a broker failure is logged, not shown.
+            log.error("password_reset_enqueue_failed", user_id=str(resolved.user_id), exc_info=True)
     return Accepted()
+
+
+def _limit(key: str, limit: int) -> None:
+    wait = ratelimit.reserve([key], limit=limit, window_seconds=RESET_WINDOW_SECONDS)
+    if wait:
+        raise RateLimited(wait, "Too many attempts. Try again later.")
 
 
 @router.post("/password-reset/confirm", response_model=Accepted, status_code=202)
 def confirm_password_reset(body: PasswordResetConfirm, request: Request) -> Accepted:
     _check_origin(request)
     invalid = ValidationFailed(_BAD_CODE, errors=[field_error("otp", "invalid", _BAD_CODE)])
+    ip = client_ip(request)
+    _limit(
+        f"rl:pwconfirm:ip:{ratelimit.key_part(ip or 'unknown')}", RESET_IP_LIMIT
+    )  # SPEC-GAP: A-105
     resolved = _resolve(_normalise(body.email))
     if resolved is None:
         raise invalid
+    # SPEC-GAP: A-105 - at most 10 failed confirms per account per 24 h, whatever the code or how many codes were
+    # requested. The attempt is counted first (atomic) and given back only when the code was right. When the cap is
+    # reached the answer is the same generic one, so it does not reveal that the account exists.
+    account = [f"rl:pwreset:fail:{resolved.user_id}"]
+    if ratelimit.reserve(account, limit=RESET_ACCOUNT_FAILURE_CAP, window_seconds=DAY_SECONDS):
+        raise invalid
+    # Code check and password hash first; the transaction that locks the user row opens only afterwards.
+    if not otp.consume(resolved.user_id, body.otp):
+        raise invalid
+    password_hash = hash_password(body.new_password)
     with tenant_tx(resolved.tenant_id, ACTOR_USER, resolved.user_id) as db:
         user = db.execute(
             select(User)
@@ -230,9 +261,7 @@ def confirm_password_reset(body: PasswordResetConfirm, request: Request) -> Acce
         ).scalar_one_or_none()
         if user is None or not user.active:
             raise invalid
-        if not otp.consume(resolved.user_id, body.otp):
-            raise invalid
-        user.password_hash = hash_password(body.new_password)
+        user.password_hash = password_hash
         user.updated_by = user.id
         db.flush()
         actor = Actor(
@@ -242,7 +271,7 @@ def confirm_password_reset(body: PasswordResetConfirm, request: Request) -> Acce
             role=user.role,
             can_approve=user.can_approve,
             plant_ids=(),
-            ip=client_ip(request),
+            ip=ip,
         )
         record_activity(
             db,
@@ -261,6 +290,7 @@ def confirm_password_reset(body: PasswordResetConfirm, request: Request) -> Acce
             event_type="USER_PASSWORD_RESET",
             payload={"user_id": str(user.id)},
         )
+    ratelimit.release(account, window_seconds=DAY_SECONDS)
     try:  # after commit: every existing session of this user ends (the password changed)
         sessions.delete_user_sessions(get_redis(), resolved.user_id)
     except Exception:

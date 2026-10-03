@@ -221,9 +221,10 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 
 | Variable | Example | Used by |
 | --- | --- | --- |
-| `QL_ENV` | `local` | api |
+| `QL_ENV` | `local` (compose/dev), `ci` (CI); required, no default | all api-image services |
+| `QL_TRUSTED_PROXIES` | `172.29.0.0/24` (compose network; prod: load-balancer subnets, P09) | api |
 | `QL_DATABASE_URL` | `postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop` | api/worker |
-| `QL_DATABASE_URL_OWNER` | `postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop` | migrate |
+| `QL_DATABASE_URL_OWNER` | `postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop` | migrate service only (not runtime) |
 | `QL_TEST_DATABASE_URL` / `QL_TEST_DATABASE_URL_OWNER` | `…/qualloop_test` | tests |
 | `QL_REDIS_URL` | `redis://qualloop_app:<QL_REDIS_PASSWORD>@redis:6379/0` (ACL user, AUTH required) | api/worker |
 | `QL_REDIS_PASSWORD` | `qualloop-redis-dev-only` (dev/CI placeholder) | compose redis, Makefile, CI; staging/prod from the secrets manager |

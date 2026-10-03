@@ -110,16 +110,20 @@ def test_startup_fails_outside_local_with_default_settings(
 ) -> None:
     from pydantic import ValidationError
 
-    for var in ("QL_DATABASE_URL", "QL_DATABASE_URL_OWNER", "QL_SESSION_SECRET", "QL_HMAC_SECRET"):
+    for var in ("QL_DATABASE_URL", "QL_SESSION_SECRET", "QL_HMAC_SECRET"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("QL_ENV", "production")
     with pytest.raises(ValidationError, match="unsafe default"):
         Settings()
     monkeypatch.setenv("QL_DATABASE_URL", "postgresql+psycopg://a:b@db/x")
-    monkeypatch.setenv("QL_DATABASE_URL_OWNER", "postgresql+psycopg://o:p@db/x")
     monkeypatch.setenv("QL_SESSION_SECRET", "short")
     monkeypatch.setenv("QL_HMAC_SECRET", "h" * 32)
     with pytest.raises(ValidationError, match="session_secret"):
         Settings()
     monkeypatch.setenv("QL_SESSION_SECRET", "s" * 32)
+    # P01 contract items 7/8: outside local/ci the other dev placeholders are refused too, so a valid production
+    # configuration also names real object-store keys and a Redis URL with credentials.
+    monkeypatch.setenv("QL_S3_ACCESS_KEY", "prod-access-key-0001")
+    monkeypatch.setenv("QL_S3_SECRET_KEY", "prod-secret-key-0000000000000001")
+    monkeypatch.setenv("QL_REDIS_URL", "redis://qualloop_app:a-real-password@redis.internal:6379/0")
     assert Settings().env == "production"

@@ -8,6 +8,7 @@ from alembic import command
 from app.core.config import Settings
 from tests.conftest import alembic_config
 from tests.factories.db import create_plant, create_tenant
+from tests.factories.env import owner_url
 from tests.integration.db.test_definer_functions import (
     P01_DEFINER_FUNCTIONS,
     SAFE_SEARCH_PATH,
@@ -42,7 +43,7 @@ def _function_names(engine: Engine) -> set[str]:
 def test_migration_chain_has_one_head_and_the_platform_revision_follows_the_baseline(
     settings: Settings,
 ) -> None:
-    script = ScriptDirectory.from_config(alembic_config(settings.test_database_url_owner))
+    script = ScriptDirectory.from_config(alembic_config(owner_url()))
     heads = script.get_heads()
     assert len(heads) == 1
     head = script.get_revision(heads[0])
@@ -53,7 +54,7 @@ def test_migration_chain_has_one_head_and_the_platform_revision_follows_the_base
 def test_migrations_up_down_up(
     settings: Settings, owner_engine: Engine, app_engine: Engine
 ) -> None:
-    cfg = alembic_config(settings.test_database_url_owner)
+    cfg = alembic_config(owner_url())
     command.upgrade(cfg, "head")
     assert _table_names(owner_engine) >= P01_TABLES
     assert _function_names(owner_engine) >= P01_DEFINER_FUNCTIONS | BASELINE_FUNCTIONS
@@ -80,7 +81,7 @@ def test_migrations_up_down_up(
 def test_after_a_round_trip_rls_is_forced_and_the_app_role_still_works(
     settings: Settings, owner_engine: Engine, app_engine: Engine
 ) -> None:
-    cfg = alembic_config(settings.test_database_url_owner)
+    cfg = alembic_config(owner_url())
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
     with owner_engine.connect() as conn:
@@ -99,7 +100,7 @@ def test_after_a_round_trip_rls_is_forced_and_the_app_role_still_works(
 def test_downgrade_one_step_removes_only_the_platform_objects(
     settings: Settings, owner_engine: Engine
 ) -> None:
-    cfg = alembic_config(settings.test_database_url_owner)
+    cfg = alembic_config(owner_url())
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "-1")
     try:

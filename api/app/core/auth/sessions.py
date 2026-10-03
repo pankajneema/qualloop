@@ -127,7 +127,10 @@ def load_session(client: redis.Redis, token: str | None) -> SessionData | None:
         _forget(client, key, data.user_id)
         return None
     record["last_seen_at"] = now
-    client.set(key, json.dumps(record), ex=IDLE_SECONDS)
+    # XX: only refresh a key that still exists. A logout, deactivation or password reset that deleted the session
+    # between the read above and this write must stay deleted (no resurrection).
+    if not client.set(key, json.dumps(record), ex=IDLE_SECONDS, xx=True):
+        return None
     return SessionData(data.session_id, data.user_id, data.tenant_id, data.created_at, now)
 
 

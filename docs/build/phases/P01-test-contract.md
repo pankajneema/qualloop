@@ -77,7 +77,7 @@ missing module fails only the tests that need it.
 
 - CSRF: `X-CSRF-Token` must equal the `ql_csrf` cookie and `Origin` must equal `QL_PUBLIC_BASE_URL`. Login and password reset are exempt from the token (no session yet) but the tests still send `Origin`.
 - Audit rows: `object_type` in `user`, `plant`, `tenant`; `action` is `<object_type>.<verb>` (e.g. `plant.create`); login writes `object_type='user'`, `object_id=<user id>`, `action='auth.login'`; password reset confirm writes an `activity_log` row with `object_type='user'` and an action containing `password`. Create rows have `before IS NULL`.
-- IP in `activity_log.ip` is the socket peer (`request.client.host`); `X-Forwarded-For` is not asserted either way.
+- IP in `activity_log.ip` and in the per-IP login counter is the client IP of section 5 item 1: the socket peer (`request.client.host`) unless the peer is a trusted proxy.
 - `created_by` / `updated_by` of rows written by a command equal the acting user's id.
 - Redis keys: `sess:{sha256(token)}`, `user_sessions:{user_id}` (removed when empty), `rl:*` (TTL <= 900 s for login), `otp:*` (value never contains the OTP, TTL <= 900 s), `idem:*`, `sched:leader`, `dramatiq:*`. Raw tokens and raw emails are never part of a key.
 - Sessions: idle 8 h sliding and absolute 7 d are evaluated **in Python from timestamps stored in the session record** (so the tests can move the clock with `time-machine`); the Redis TTL is a backstop (<= 8 h).
@@ -94,3 +94,63 @@ missing module fails only the tests that need it.
 - Local stand-ins on the usual ports: Postgres, Redis, SeaweedFS `:8333` (`QL_S3_*`), mailpit SMTP `:1025` and REST `:8025` (`QL_MAILPIT_URL` overrides), ClamAV `:3310` (`QL_CLAMAV_HOST`, `QL_CLAMAV_PORT`).
 - New third-party packages the tests import (backend adds them to `pyproject.toml`; qa did not edit it): `argon2-cffi`, `dramatiq[redis]`, `boto3` (provides `botocore`), `filetype`, `uuid6`, `apscheduler<4`, `prometheus-client`, `opentelemetry-*`.
 - The tests use the API at `https://testserver` so `Secure` cookies are returned by the client.
+
+## 5. Regression contract (code and security review of 94b8616)
+
+Added after review. Tests: `P01-tests.md` section "Review regressions". **assumed** unless a document is named.
+
+1. **Client IP.** New setting `QL_TRUSTED_PROXIES` (`Settings.trusted_proxies`): comma-separated CIDR list, default empty.
+   If the socket peer is inside a trusted CIDR, the client IP is the right-most `X-Forwarded-For` entry that is not itself
+   in a trusted CIDR (no such entry, or an unparsable one: the peer). Otherwise the peer is used and `X-Forwarded-For`
+   is ignored. The client IP feeds the per-IP login counter, `activity_log.ip` and the session record.
+2. **Login limit under concurrency.** At most 5 wrong-password logins per email (and per IP) are answered 401 inside the window,
+   however many arrive at once; the rest are 429 with `Retry-After`.
+3. **`sessions.load_session`** never writes back a session that `delete_session` / `delete_user_sessions` removed between its read
+   and its refresh. The test injects the delete after the first GET/GETEX/EVAL/EVALSHA/WATCH of the session key
+   (`tests/factories/redis_chaos.py`), so the refresh must be conditional or atomic (for example `SET ... XX`, a Lua script,
+   or WATCH/MULTI).
+4. **Outbox handlers carry their queue.** `app.core.outbox.registry.add_handler(event_type, actor_name, *, queue)`. The default
+   enqueue builds `Message(queue_name=queue, actor_name=actor_name, message_id=f"{event_id}:{actor_name}", kwargs={tenant_id,
+   event_id, event_type, aggregate_type, aggregate_id, payload})` without needing the actor object, so it works in a process that
+   never imported `app.worker`. Test: fresh interpreter, real Redis, `dispatch_once()` with the default enqueue.
+5. **Last-admin guard (A-98).** Unchanged behaviour, now tested: 422 `invariant_violation`; concurrent mutual demotion or
+   deactivation leaves at least one active admin and the loser sees 409/422 (401/403 if the other command committed before
+   it authenticated).
+6. **Commands in tests.** `app.core.commands.base.Command(name, path, permission, handle)`, `Outcome(...)`, `run_command(command,
+   data, *, actor, idempotency_key, endpoint)` and `app.core.hooks.subscribe(name, hook)` / `publish` / `_HOOKS` are test-visible
+   (an unregistered `Command` may be run through `run_command`). Hook name is `command.<Command.name>`; a hook is called as
+   `hook(session, actor, outcome)` inside the command transaction.
+7. **`Settings.env` is required** (`QL_ENV`, one of `local`, `ci`, `staging`, `production`; no default). Outside `local` and `ci`
+   the validator also rejects the default `s3_access_key` / `s3_secret_key`, the default `redis_url`, and
+   `session_secret == hmac_secret` (on top of the existing default/short secret checks). The message names each offending field.
+   The test package sets `QL_ENV=local` in `tests/__init__.py` (`setdefault`).
+8. **No owner credential at runtime.** `Settings` has no `database_url_owner`; `QL_DATABASE_URL_OWNER` is read only by
+   `alembic/env.py`; production validation does not require it. Test fixtures read the owner URL of the TEST database from
+   `QL_TEST_DATABASE_URL_OWNER` through `tests/factories/env.py::owner_url()`, not from `Settings`.
+9. **PII in database errors.** The engine is created with `hide_parameters=True` (`get_engine().hide_parameters is True`). A job that
+   dies on a database error leaves no bound value and no PostgreSQL `DETAIL` value (for example the duplicate email of a unique
+   violation) in `job_dead_letters.last_error`.
+10. **`users` UPDATE grant** for `qualloop_app` is exactly `name, mobile, role, can_approve, plant_ids, active, password_hash,
+    updated_at, updated_by` (`information_schema.column_privileges`); `email`, `tenant_id`, `id`, `created_at`, `created_by` are
+    denied with "permission denied".
+11. **UUIDv7 monotonicity.** `new_id()` is strictly increasing across a 12-bit counter overflow inside one millisecond and when the
+    clock steps back by up to 500 ms. (A clamp must be bounded: `test_new_id_embeds_the_current_unix_milliseconds` moves the clock
+    back by hours and still expects the embedded time to follow it.)
+12. **Scanner size gate.** `scan_quarantined` on an object larger than 20,000,000 bytes (A-97) returns `status="quarantined",
+    reason="too_large", sha256=None` using only metadata (`HeadObject`): no `GetObject`, no `scan_bytes`, nothing promoted, the
+    object stays in quarantine, and it does not raise (no retry).
+13. **`Idempotency-Key` is a UUID** (any case, hyphenated). Anything else: 422 `validation_error`, `errors[].field == "Idempotency-Key"`,
+    nothing written. Authorisation is still checked first (a viewer gets 403).
+14. **Password reset.** (a) a job for an older request never replaces a code stored for a newer request; (b) `otp.consume` on an
+    expired code creates no key and never leaves an `otp:pwreset:*` key without a TTL, even if the key expires mid-call;
+    (c) 10 failed confirms in 24 h per account (counter not reset by a new request) make every later confirm fail, valid code or
+    not; (d) **SPEC-GAP-pending**: 20 requests per hour per IP on `/auth/password-reset/request` and 20 per hour per IP on
+    `/confirm`, each its own counter, 429 `rate_limited` with `Retry-After` <= 3600; (e) if enqueueing fails (broker error) the request
+    still answers 202 with the same body as for an unknown email.
+15. **Chunked bodies.** A request body over 1 MB without a `Content-Length` header gets 413 `payload_too_large`, like a sized one.
+16. **Metric.** Dead-lettering increments the default-registry counter `qualloop_jobs_dead_lettered_total{queue,actor}` once per message.
+17. **Dead-lettered message hygiene.** After dead-lettering, no key under `dramatiq:<queue>*` contains a raw email from the exception
+    (`options.traceback` is masked), while the exception type name is still present.
+18. **Hook bus.** A hook runs inside the command's transaction; a raising hook rolls back business, audit, outbox and idempotency rows.
+19. **Test isolation.** `conftest.py` holds a session-wide `pg_advisory_lock(0x514C5445)` (owner role) so a second pytest run waits, and
+    stops any `dramatiq.Worker` a test left running.

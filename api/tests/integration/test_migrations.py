@@ -4,6 +4,7 @@ from sqlalchemy import Engine, text
 from alembic import command
 from app.core.config import Settings
 from tests.conftest import alembic_config
+from tests.factories.env import owner_url
 
 pytestmark = pytest.mark.integration
 
@@ -33,7 +34,7 @@ def _functions(engine: Engine) -> set[str]:
 
 
 def test_upgrade_downgrade_upgrade(settings: Settings, owner_engine: Engine) -> None:
-    cfg = alembic_config(settings.test_database_url_owner)
+    cfg = alembic_config(owner_url())
     command.upgrade(cfg, "head")
     assert _functions(owner_engine) >= FUNCTIONS
 
