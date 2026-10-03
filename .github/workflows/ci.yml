@@ -41,32 +41,56 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
-      redis:
-        image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
-        ports: ["6379:6379"]
+      mailpit:
+        image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+        ports: ["1025:1025", "8025:8025"]
         options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+          --health-cmd "/mailpit readyz" --health-interval 5s --health-timeout 3s --health-retries 20
     env:
       PGPASSWORD: ci-postgres-only
       QL_DATABASE_URL: postgresql+psycopg://qualloop_app:qualloop_app@localhost:5432/qualloop_test
       QL_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:5432/qualloop_test
       QL_TEST_DATABASE_URL: postgresql+psycopg://qualloop_app:qualloop_app@localhost:5432/qualloop_test
       QL_TEST_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:5432/qualloop_test
-      QL_REDIS_URL: redis://localhost:6379/0
+      QL_REDIS_PASSWORD: ci-redis-only
+      QL_REDIS_URL: redis://qualloop_app:ci-redis-only@localhost:6379/0
       QL_S3_ENDPOINT_URL: http://localhost:8333
+      QL_SMTP_HOST: localhost
+      QL_SMTP_PORT: "1025"
+      QL_CLAMAV_HOST: localhost
+      QL_CLAMAV_PORT: "3310"
       QL_S3_ACCESS_KEY: ci-s3-access
       QL_S3_SECRET_KEY: ci-s3-only-secret
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with: { version: "${{ env.UV_VERSION }}" }
+      - name: Start ClamAV (signatures download in the background)
+        run: |
+          docker run -d --name clamav -p 3310:3310 \
+            clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+      - name: Start Redis with ACL (default user disabled, INV-SEC-08)
+        run: |
+          docker run -d --name redis -p 6379:6379 -e QL_REDIS_PASSWORD -e REDISCLI_AUTH="$QL_REDIS_PASSWORD" \
+            -v "$GITHUB_WORKSPACE/infra/redis/entrypoint.sh:/entrypoint.sh:ro" \
+            -v "$GITHUB_WORKSPACE/infra/redis/users.acl.tmpl:/acl/users.acl.tmpl:ro" \
+            --health-cmd "redis-cli --user qualloop_app --no-auth-warning ping | grep -q PONG" \
+            --health-interval 5s --health-timeout 3s --health-retries 20 \
+            --entrypoint /bin/sh \
+            redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f /entrypoint.sh
+          for _ in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' redis)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs redis
+          exit 1
       - run: uv sync --frozen
       - name: Start S3 (SeaweedFS) and create buckets
         run: |
           docker run -d --name s3 -p 8333:8333 -e QL_S3_ACCESS_KEY -e QL_S3_SECRET_KEY \
             -v "$GITHUB_WORKSPACE/infra/s3/entrypoint.sh:/entrypoint.sh:ro" --entrypoint /bin/sh \
             chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d /entrypoint.sh
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/ || true)
             [ "$code" = 403 ] && break
             sleep 2
@@ -81,8 +105,18 @@ jobs:
           uv run alembic upgrade head
           uv run alembic downgrade base
           uv run alembic upgrade head
+      - name: Wait for ClamAV (signatures loaded)
+        run: |
+          for _ in $(seq 1 90); do
+            [ "$(docker exec clamav /usr/local/bin/clamdcheck.sh 2>/dev/null || true)" = "Clamd is up" ] && exit 0
+            sleep 5
+          done
+          docker logs clamav
+          exit 1
       - name: Tests with coverage gate (75% overall)
         run: uv run pytest
+      - name: Coverage gate for app/core (90%)
+        run: uv run coverage report --include='app/core/*' --fail-under=90
 
   web-lint:
     runs-on: ubuntu-latest

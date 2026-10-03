@@ -3,6 +3,7 @@
 import json
 from contextlib import ExitStack
 from typing import Any
+from uuid import uuid4
 
 import pytest
 import redis as redis_lib
@@ -83,7 +84,9 @@ def test_pii_is_masked_in_every_log_line_of_a_command(
     client = json_log_api.login_as(seeded.admin)
     capsys.readouterr()
     body = new_user_body(
-        email="very.private.person@example.test", mobile="+919876543210", name="Private Person"
+        email=f"very.private.person.{uuid4().hex[:8]}@example.test",
+        mobile="+919876543210",
+        name="Private Person",
     )
     assert client.post("/users", body).status_code in (200, 201)
     out = capsys.readouterr().out

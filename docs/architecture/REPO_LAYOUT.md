@@ -72,11 +72,14 @@ qualloop/
 │   │   │   ├── errors.py                      [P01] problem+json, DB error mapping
 │   │   │   ├── ids.py · money.py · timeutils.py · numbering.py   [P01]
 │   │   │   ├── tenancy.py · permissions.py · hooks.py · idempotency.py · ratelimit.py · telemetry.py   [P01]
-│   │   │   ├── auth/ (passwords.py, sessions.py, router.py)       [P01]
+│   │   │   ├── auth/ (passwords.py, sessions.py, otp.py, deps.py, schemas.py, router.py, jobs.py, job_refs.py)   [P01]
 │   │   │   ├── commands/ (base.py, state_machine.py)              [P01]
 │   │   │   ├── audit/ (models.py, writer.py)                      [P01]
 │   │   │   ├── outbox/ (models.py, writer.py, registry.py, dispatcher.py, sweeper.py)   [P01]
-│   │   │   ├── files/ (storage.py, scanner.py, router.py)         [P01]
+│   │   │   ├── files/ (storage.py, service.py, scanner.py, router.py, jobs.py, job_refs.py)   [P01]
+│   │   │   ├── jobs/ (broker.py, registry.py, middleware.py)       [P01]
+│   │   │   ├── platform/ (schemas.py, commands.py, queries.py, router.py) — users, plants, tenant settings   [P01]
+│   │   │   ├── routing.py · pagination.py · mail.py · redis_client.py   [P01]
 │   │   │   └── models.py (tenants, plants, users)                 [P01]
 │   │   ├── masters/          [P02] models · schemas · commands · queries · service · router · events · hooks · policies · jobs
 │   │   ├── imports/          [P02] + parsers/ · validators/ · report.py
@@ -181,14 +184,14 @@ qualloop/
 | Service | Image | Ports (host) | Notes |
 | --- | --- | --- | --- |
 | `postgres` | `postgres:16` | 5432 | init scripts from `infra/postgres/init`; healthcheck `pg_isready` |
-| `redis` | `redis:7` | 6379 | healthcheck `redis-cli ping` |
+| `redis` | `redis:7` | 6379 | **[P01]** ACL file rendered at start from `infra/redis/users.acl.tmpl` (`infra/redis/entrypoint.sh`): default user off, AUTH required, app user `qualloop_app` (ADR-008 key patterns, `@admin`/`@dangerous`/`FLUSHALL`/`KEYS`/`CONFIG` denied); healthcheck authenticates as `qualloop_app` |
 | `s3` | `chrislusf/seaweedfs` (pinned by digest; ADR-020) + `s3-init` one-shot (`amazon/aws-cli`) | 8333 | S3 identity from `infra/s3/entrypoint.sh`; buckets from `infra/s3/init.sh` |
 | `mailpit` | `axllent/mailpit` | 1025 (SMTP), 8025 (UI) | |
 | `migrate` | api image, `alembic upgrade head` | — | one-shot; `depends_on: postgres healthy` |
 | `api` | api image, `uvicorn app.main:create_app --factory --reload` | 8000 | `depends_on: migrate completed` |
 | `web` | web image (dev: `pnpm dev`) | 3000 | `NEXT_PUBLIC_*` none secret; proxies `/api` → api:8000 in dev |
-| `worker` · `dispatcher` · `scheduler` | api image | — | **[P01]** (added when the code exists) |
-| `clamav` | `clamav/clamav` | 3310 | **[P01], only after human approval (A-47)** |
+| `worker` · `dispatcher` · `scheduler` | api image; `dramatiq app.worker`, `python -m app.dispatcher`, `python -m app.scheduler` | — | **[P01]** same env as `api`; `depends_on` migrate, s3-init, redis, clamav, mailpit |
+| `clamav` | `clamav/clamav:1.5.4-debian` (pinned by digest, multi-arch) | 3310 (127.0.0.1) | **[P01]**, approved A-47; healthcheck `clamdcheck.sh` (clamd answers PING only once signatures are loaded; first start downloads them); signatures cached in volume `clamdata` |
 
 ## 4. Makefile targets [P00]
 
@@ -198,7 +201,8 @@ qualloop/
 | `make down` | `docker compose -f infra/compose.yaml down` (volumes kept; `make down V=1` removes volumes) |
 | `make migrate` | `docker compose run --rm migrate` |
 | `make seed` | `docker compose run --rm api uv run python -m seeds.demo` (P00: no-op that exits 0; P01+: real seed) |
-| `make test` | `api`: `uv run pytest --cov=app` (unit + integration + security) against compose Postgres/Redis; `web`: `pnpm vitest run` |
+| `make test` | `api`: `uv run pytest --cov=app` (unit + integration + security) against compose Postgres, Redis (ACL), S3, mailpit, ClamAV, then `make coverage-core` (`app/core` ≥ 90%, P01); `web`: `pnpm vitest run` |
+| `make lint-ci` | actionlint (pinned image) over `.github/workflows`; part of `make ci` |
 | `make lint` | `uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run lint-imports`; `pnpm eslint . && pnpm prettier --check . && pnpm tsc --noEmit` |
 | `make fmt` | `uv run ruff format . && uv run ruff check --fix .`; `pnpm prettier --write .` |
 | `make e2e` | `pnpm playwright test` against `make up` stack |
@@ -221,11 +225,16 @@ on `web/`. (mypy, tsc, tests run in CI and `make lint`/`make test`, not on every
 | `QL_DATABASE_URL` | `postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop` | api/worker |
 | `QL_DATABASE_URL_OWNER` | `postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop` | migrate |
 | `QL_TEST_DATABASE_URL` / `QL_TEST_DATABASE_URL_OWNER` | `…/qualloop_test` | tests |
-| `QL_REDIS_URL` | `redis://redis:6379/0` | api/worker |
+| `QL_REDIS_URL` | `redis://qualloop_app:<QL_REDIS_PASSWORD>@redis:6379/0` (ACL user, AUTH required) | api/worker |
+| `QL_REDIS_PASSWORD` | `qualloop-redis-dev-only` (dev/CI placeholder) | compose redis, Makefile, CI; staging/prod from the secrets manager |
+| `QL_CLAMAV_HOST` / `QL_CLAMAV_PORT` | `clamav` / `3310` (tests: `localhost` / `3310`) | api/worker (files.scan) |
 | `QL_S3_ENDPOINT_URL` | `http://s3:8333` | api/worker |
 | `QL_S3_BUCKET_FILES` / `QL_S3_BUCKET_QUARANTINE` | `qualloop-files` / `qualloop-quarantine` | api/worker |
+| `QL_S3_REGION` | `us-east-1` | api/worker |
+| `QL_S3_PUBLIC_ENDPOINT_URL` | `http://localhost:8333` (host that presigned URLs are signed for) | api |
 | `QL_S3_ACCESS_KEY` / `QL_S3_SECRET_KEY` | `qualloop-dev` / `change-me-local-only` | local only |
 | `QL_SMTP_HOST` / `QL_SMTP_PORT` | `mailpit` / `1025` | worker |
+| `QL_MAIL_FROM` | `QualLoop <no-reply@qualloop.in>` | worker |
 | `QL_SESSION_SECRET` / `QL_HMAC_SECRET` | `change-me-32-bytes-min` | api |
 | `QL_PUBLIC_BASE_URL` | `http://localhost:3000` | links in messages |
 | `QL_WHATSAPP_PROVIDER` / `QL_AI_PROVIDER` | `fake` / `fake` | worker |
@@ -248,7 +257,7 @@ Web: `GET /` returns 200 (app shell). Load-balancer target health checks: api �
 | Job | Steps | Runs |
 | --- | --- | --- |
 | `api-lint` | uv sync --frozen; ruff check; ruff format --check; mypy --strict app; lint-imports | every push/PR |
-| `api-test` | services postgres:16 (+ init roles SQL), redis:7, SeaweedFS S3 (steps, ADR-020); alembic upgrade head → downgrade base → upgrade head; pytest with coverage (gate 75% overall from P01; per-module 90% gates added in the phases that create those modules) | every push/PR |
+| `api-test` | services postgres:16 (+ init roles SQL), mailpit; steps: redis:7 with ACL (same entrypoint/template as compose), ClamAV, SeaweedFS S3 (ADR-020); alembic upgrade head → downgrade base → upgrade head; pytest with coverage (gate 75% overall from P01), then `coverage report --include='app/core/*' --fail-under=90` (P01); further per-module 90% gates are added in the phases that create those modules | every push/PR |
 | `web-lint` | pnpm install --frozen-lockfile; eslint; prettier --check; tsc --noEmit | every push/PR |
 | `web-test` | vitest run | every push/PR |
 | `e2e` | compose up; playwright (desktop + phone-360) | push to main [P00 smoke], PRs from P04 |

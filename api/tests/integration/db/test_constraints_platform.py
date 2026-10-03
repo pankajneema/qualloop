@@ -119,9 +119,10 @@ def test_user_email_is_globally_unique_case_insensitively_across_tenants(
 ) -> None:
     """A-03: login resolves the tenant from the email, so it must be unique across tenants."""
     a, b = create_tenant(app_engine), create_tenant(app_engine)
-    create_user(app_engine, a, email="Shared.Person@Example.test")
+    token = uuid4().hex[:10]
+    create_user(app_engine, a, email=f"Shared.Person.{token}@Example.test")
     with expect_db_error(psycopg.errors.UniqueViolation), tenant_conn(app_engine, b) as conn:
-        _user(conn, b, email="shared.person@example.TEST")
+        _user(conn, b, email=f"shared.person.{token}@example.TEST")
 
 
 @pytest.mark.parametrize("role", ["owner", "Admin", "", "supplier"])

@@ -8,9 +8,18 @@ x-api-env: &api-env
   QL_LOG_LEVEL: ${QL_LOG_LEVEL:-INFO}
   QL_DATABASE_URL: postgresql+psycopg://qualloop_app:qualloop_app@postgres:5432/qualloop
   QL_DATABASE_URL_OWNER: postgresql+psycopg://qualloop_owner:qualloop_owner@postgres:5432/qualloop
-  QL_REDIS_URL: redis://redis:6379/0
+  QL_REDIS_URL: redis://qualloop_app:${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}@redis:6379/0
   QL_PUBLIC_BASE_URL: http://localhost:3000
   QL_S3_ENDPOINT_URL: http://s3:8333
+  QL_S3_PUBLIC_ENDPOINT_URL: ${QL_S3_PUBLIC_ENDPOINT_URL:-http://localhost:8333}
+  QL_S3_BUCKET_FILES: ${QL_S3_BUCKET_FILES:-qualloop-files}
+  QL_S3_BUCKET_QUARANTINE: ${QL_S3_BUCKET_QUARANTINE:-qualloop-quarantine}
+  QL_S3_ACCESS_KEY: ${QL_S3_ACCESS_KEY:-qualloop-dev}
+  QL_S3_SECRET_KEY: ${QL_S3_SECRET_KEY:-change-me-local-only}
+  QL_SMTP_HOST: mailpit
+  QL_SMTP_PORT: "1025"
+  QL_CLAMAV_HOST: clamav
+  QL_CLAMAV_PORT: "3310"
 
 services:
   postgres:
@@ -31,10 +40,19 @@ services:
 
   redis:
     image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    # ACL file rendered at start from infra/redis/users.acl.tmpl (default user off, AUTH required, INV-SEC-08).
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      QL_REDIS_PASSWORD: ${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}
+      REDISCLI_AUTH: ${QL_REDIS_PASSWORD:-qualloop-redis-dev-only}
     ports:
       - "127.0.0.1:${QL_REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - ./redis/entrypoint.sh:/entrypoint.sh:ro
+      - ./redis/users.acl.tmpl:/acl/users.acl.tmpl:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # authenticated as the app user (the default user is disabled)
+      test: ["CMD-SHELL", "redis-cli --user qualloop_app --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -84,6 +102,21 @@ services:
       timeout: 3s
       retries: 20
 
+  clamav:
+    # ClamAV clamd (ADR-011, human decision A-47). Dev/CI only; clamd answers PING only after signatures are loaded.
+    # Debian variant: multi-arch (amd64 + arm64). Signatures are cached in a volume; first start needs network.
+    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamdata:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
   migrate:
     image: qualloop-api:dev
     build:
@@ -121,6 +154,40 @@ services:
       timeout: 5s
       retries: 30
 
+  worker:
+    image: qualloop-api:dev
+    command: ["dramatiq", "app.worker"]
+    environment: *api-env
+    volumes: &api-code
+      - ../api/app:/app/app
+      - ../api/alembic:/app/alembic
+      - ../api/seeds:/app/seeds
+    depends_on: &worker-deps
+      migrate:
+        condition: service_completed_successfully
+      s3-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+
+  dispatcher:
+    image: qualloop-api:dev
+    command: ["python", "-m", "app.dispatcher"]
+    environment: *api-env
+    volumes: *api-code
+    depends_on: *worker-deps
+
+  scheduler:
+    image: qualloop-api:dev
+    command: ["python", "-m", "app.scheduler"]
+    environment: *api-env
+    volumes: *api-code
+    depends_on: *worker-deps
+
   web:
     build:
       context: ../web
@@ -147,3 +214,4 @@ services:
 volumes:
   pgdata:
   s3data:
+  clamdata:

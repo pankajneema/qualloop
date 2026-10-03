@@ -2,7 +2,7 @@
 
 import re
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Connection, Engine, text
@@ -93,9 +93,10 @@ def test_app_resolve_login_maps_email_to_tenant_and_user_case_insensitively(
     app_engine: Engine,
 ) -> None:
     tenant = create_tenant(app_engine)
-    user = create_user(app_engine, tenant, email="Mixed.Case@Example.test")
+    token = uuid4().hex[:10]
+    user = create_user(app_engine, tenant, email=f"Mixed.Case.{token}@Example.test")
     with app_engine.connect() as conn:  # no tenant context at all: this is the login path
-        for probe in ("mixed.case@example.test", "MIXED.CASE@EXAMPLE.TEST"):
+        for probe in (f"mixed.case.{token}@example.test", f"MIXED.CASE.{token}@EXAMPLE.TEST"):
             row = conn.execute(text("SELECT * FROM app_resolve_login(:e)"), {"e": probe}).one()
             ids = {v for v in row if isinstance(v, UUID)}
             assert ids == {tenant, user.id}, f"{probe}: {row}"

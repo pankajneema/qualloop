@@ -1,7 +1,6 @@
 """Mailpit (local SMTP sink, REST on :8025) helpers."""
 
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
@@ -16,7 +15,7 @@ def clear() -> None:
 
 def messages_to(address: str) -> list[dict[str, Any]]:
     resp = httpx.get(
-        f"{mailpit_url()}/api/v1/search", params={"query": f"to:{quote(address)}"}, timeout=TIMEOUT
+        f"{mailpit_url()}/api/v1/search", params={"query": f"to:{address}"}, timeout=TIMEOUT
     )
     resp.raise_for_status()
     messages: list[dict[str, Any]] = resp.json()["messages"]

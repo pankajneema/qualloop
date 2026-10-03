@@ -11,27 +11,37 @@ REDIS_PORT ?= $(or $(QL_REDIS_HOST_PORT),6379)
 export QL_PG_HOST_PORT    := $(PG_PORT)
 export QL_REDIS_HOST_PORT := $(REDIS_PORT)
 
+# Dev-only placeholder (same default as infra/compose.yaml). Redis requires AUTH as ACL user qualloop_app (INV-SEC-08).
+REDIS_PASSWORD ?= $(or $(QL_REDIS_PASSWORD),qualloop-redis-dev-only)
+export QL_REDIS_PASSWORD := $(REDIS_PASSWORD)
+# Core coverage gate (PHASES P01): app/core >= 90% on top of the overall gate in api/pyproject.toml.
+CORE_COV_MIN ?= 90
+
 # Tests/migrations run on the host against the compose Postgres/Redis (real services, no SQLite).
 TEST_ENV := QL_TEST_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
             QL_TEST_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test \
             QL_DATABASE_URL=postgresql+psycopg://qualloop_app:qualloop_app@localhost:$(PG_PORT)/qualloop_test \
             QL_DATABASE_URL_OWNER=postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:$(PG_PORT)/qualloop_test \
-            QL_REDIS_URL=redis://localhost:$(REDIS_PORT)/0
+            QL_REDIS_URL=redis://qualloop_app:$(REDIS_PASSWORD)@localhost:$(REDIS_PORT)/0 \
+            QL_S3_ENDPOINT_URL=http://localhost:8333 \
+            QL_SMTP_HOST=localhost QL_SMTP_PORT=1025 \
+            QL_CLAMAV_HOST=localhost QL_CLAMAV_PORT=3310
+# Note: tests switch to Redis database 15 themselves (tests/conftest.py), so the URL above stays on db 0.
 
-.PHONY: help up down deps migrate seed test test-api test-web lint lint-api lint-web fmt e2e \
-        migrations-roundtrip build secrets audit scan-images ci
+.PHONY: help up down deps migrate seed test test-api coverage-core test-web lint lint-api lint-web fmt e2e \
+        migrations-roundtrip build secrets audit scan-images lint-ci ci
 
 help:
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ -/' | sort
 
-up: ## start postgres, redis, s3 (SeaweedFS), mailpit, migrate, api, web (waits until healthy)
+up: ## start postgres, redis (ACL), s3 (SeaweedFS), mailpit, clamav, migrate, api, worker, dispatcher, scheduler, web (waits until healthy)
 	$(COMPOSE) up -d --build --wait
 
 down: ## stop the stack (V=1 also removes volumes)
 	$(COMPOSE) down $(if $(V),-v,)
 
-deps: ## start only postgres + redis (enough for tests)
-	$(COMPOSE) up -d --wait postgres redis
+deps: ## start only what tests need: postgres, redis (ACL), s3 + buckets, mailpit, clamav
+	$(COMPOSE) up -d --wait postgres redis s3 s3-init mailpit clamav
 
 migrate: ## run alembic upgrade head in the stack
 	$(COMPOSE) run --rm migrate
@@ -41,8 +51,12 @@ seed: ## load demo data (P00: no-op)
 
 test: test-api test-web ## api (pytest+coverage) and web (vitest)
 
-test-api: deps
+test-api: deps ## pytest (overall gate 75% from pyproject) then the app/core >= 90% gate
 	cd api && uv sync --frozen && $(TEST_ENV) uv run pytest
+	$(MAKE) coverage-core
+
+coverage-core: ## fail if app/core coverage (from the last pytest run) is below CORE_COV_MIN
+	cd api && uv run coverage report --include='app/core/*' --fail-under=$(CORE_COV_MIN)
 
 test-web:
 	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) vitest run
@@ -90,5 +104,10 @@ scan-images: build ## Trivy HIGH/CRITICAL (fixable) scan of the production image
 	    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --quiet $$img || exit 1; \
 	done
 
-ci: lint test-api migrations-roundtrip test-web build secrets audit scan-images ## same steps as .github/workflows/ci.yml, locally
+ACTIONLINT := rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+lint-ci: ## actionlint over .github/workflows
+	docker run --rm -v "$(CURDIR):/repo" -w /repo $(ACTIONLINT) -color
+
+ci: lint lint-ci test-api migrations-roundtrip test-web build secrets audit scan-images ## same steps as .github/workflows/ci.yml, locally
 	@echo "ci: all steps green"

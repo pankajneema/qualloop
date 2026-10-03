@@ -24,7 +24,26 @@ class Settings(BaseSettings):
     test_database_url_owner: str = (
         "postgresql+psycopg://qualloop_owner:qualloop_owner@localhost:5432/qualloop_test"
     )
+    # Names the ACL user: redis://qualloop_app:<password>@host:6379/0 (INV-SEC-08, ADR-008).
     redis_url: str = "redis://localhost:6379/0"
+
+    # Object storage (S3 API; SeaweedFS locally, ADR-020). Two private buckets (ADR-011).
+    s3_endpoint_url: str = "http://localhost:8333"
+    # Host that browsers use to reach the store when it differs from `s3_endpoint_url` (e.g. the compose-internal
+    # name `s3`). Presigned URLs are signed for this host. Empty = use `s3_endpoint_url`.
+    s3_public_endpoint_url: str = ""
+    s3_region: str = "us-east-1"
+    s3_access_key: str = "qualloop-dev"
+    s3_secret_key: str = "change-me-local-only"  # noqa: S105 - dev placeholder
+    s3_bucket_files: str = "qualloop-files"
+    s3_bucket_quarantine: str = "qualloop-quarantine"
+
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    mail_from: str = "QualLoop <no-reply@qualloop.in>"
+
+    clamav_host: str = "localhost"
+    clamav_port: int = 3310
 
     session_secret: str = "change-me-32-bytes-min"  # noqa: S105 - dev placeholder, rejected outside local
     hmac_secret: str = "change-me-32-bytes-min"  # noqa: S105

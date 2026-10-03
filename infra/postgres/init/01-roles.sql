@@ -20,3 +20,6 @@ REVOKE TEMP ON DATABASE qualloop_test FROM PUBLIC;
 
 -- Data migrations (DATA_MODEL 0.9) run `SET LOCAL ROLE qualloop_app` from the owner connection: allow SET, no inheritance.
 GRANT qualloop_app TO qualloop_owner WITH INHERIT FALSE, SET TRUE;
+
+-- SECURITY DEFINER lookup functions (DATA_MODEL 8) are owned by qualloop_sysfn; the owner needs SET to assign them.
+GRANT qualloop_sysfn TO qualloop_owner WITH INHERIT FALSE, SET TRUE;

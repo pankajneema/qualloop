@@ -37,7 +37,10 @@ def test_the_app_connects_as_the_named_restricted_user_not_default(
 
 def test_redis_requires_authentication(settings: Settings) -> None:
     parts = urlsplit(settings.redis_url)
-    anonymous = redis_lib.Redis(host=parts.hostname or "localhost", port=parts.port or 6379)
+    # protocol=2: redis-py 8 defaults to RESP3 and would fail at HELLO before the server's NOAUTH reply.
+    anonymous = redis_lib.Redis(
+        host=parts.hostname or "localhost", port=parts.port or 6379, protocol=2
+    )
     with pytest.raises(AuthenticationError, match=r"NOAUTH|Authentication required"):
         anonymous.ping()
 
@@ -95,6 +98,11 @@ def test_redis_app_user_cannot_run_admin_commands(
         ("CLIENT", "KILL", "TYPE", "normal"),
         ("MONITOR",),
     ):
+        if command[0] == "DEBUG":
+            # Redis ships with DEBUG disabled and refuses it before the ACL check; either refusal is a denial.
+            with pytest.raises(ResponseError, match=r"NOPERM|permission|DEBUG command not allowed"):
+                run(app_redis, *command)
+            continue
         with pytest.raises(NoPermissionError, match=r"NOPERM|permission"):
             run(app_redis, *command)
 
